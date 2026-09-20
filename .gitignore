@@ -482,6 +482,9 @@ _reflect_types/
 VtReflect/
 inspect.cs
 .public-export/
+WorldBuilder.Desktop/
+/lib/
+/package/
 
 # Native DAT library: track the shipping Windows DLL only
 native/*.dll
