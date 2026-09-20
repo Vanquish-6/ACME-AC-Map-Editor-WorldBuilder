@@ -1,0 +1,142 @@
+<UserControl
+    x:Class="WorldBuilder.Editors.Landscape.Views.ObjectBrowserView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:conv="using:WorldBuilder.Lib.Converters"
+    xmlns:vm="using:WorldBuilder.Editors.Landscape.ViewModels"
+    d:DesignHeight="500"
+    d:DesignWidth="280"
+    x:CompileBindings="True"
+    x:DataType="vm:ObjectBrowserViewModel"
+    mc:Ignorable="d">
+    <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="10,10,10,8">
+            <TextBox
+                Watermark="Search by name or hex ID"
+                Text="{Binding SearchText}" />
+
+            <WrapPanel Orientation="Horizontal">
+                <ToggleButton Classes="filter-chip" Margin="0,0,6,6" Content="Setups" IsChecked="{Binding ShowSetups}" />
+                <ToggleButton Classes="filter-chip" Margin="0,0,6,6" Content="Buildings" IsChecked="{Binding ShowBuildingsOnly}" />
+                <ToggleButton Classes="filter-chip" Margin="0,0,6,6" Content="Scenery" IsChecked="{Binding ShowSceneryOnly}" />
+                <ToggleButton Classes="filter-chip" Margin="0,0,6,6" Content="Weenies" IsChecked="{Binding ShowWeenies}" />
+                <ToggleButton Classes="filter-chip" Margin="0,0,6,6" Content="Particles" IsChecked="{Binding ShowParticleEmitters}" />
+                <ToggleButton Classes="filter-chip"
+                              Margin="0,0,6,6"
+                              IsChecked="{Binding ShowFavoritesOnly}"
+                              ToolTip.Tip="Show favorites only">
+                    <Panel>
+                        <TextBlock Text="&#x2605;" FontSize="13" Foreground="#d4a843"
+                                   IsVisible="{Binding ShowFavoritesOnly}" />
+                        <TextBlock Text="&#x2606;" FontSize="13" Foreground="#8a7a9e"
+                                   IsVisible="{Binding !ShowFavoritesOnly}" />
+                    </Panel>
+                </ToggleButton>
+            </WrapPanel>
+
+            <Button Content="Load weenies from database"
+                    Classes="ghost"
+                    HorizontalAlignment="Left"
+                    Command="{Binding LoadWeeniesFromDbCommand}"
+                    IsEnabled="{Binding !IsLoadingWeenies}" />
+
+            <Border IsVisible="{Binding ShowWeenies}"
+                    Classes="acme-stat"
+                    Padding="10,8">
+                <StackPanel Spacing="6">
+                    <TextBlock Classes="muted" Text="Place weenie as" />
+                    <StackPanel Orientation="Horizontal" Spacing="12">
+                        <RadioButton Content="Static (DAT)"
+                                     IsChecked="{Binding PlaceWeenieAsInstance, Converter={x:Static conv:BoolConverters.Not}}"
+                                     ToolTip.Tip="Embeds the weenie's model as a static object in the DAT. Fast but not server-side." />
+                        <RadioButton Content="DB instance"
+                                     IsChecked="{Binding PlaceWeenieAsInstance}"
+                                     ToolTip.Tip="Creates a server instance placement exported to SQL. The weenie lives on the server." />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <TextBlock Classes="muted" Text="{Binding Status}" />
+        </StackPanel>
+
+        <ScrollViewer>
+            <StackPanel Margin="8,0,8,16">
+                <ItemsControl ItemsSource="{Binding FilteredItems}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:ObjectBrowserItem">
+                            <Button
+                                Classes="palette-card"
+                                Margin="4"
+                                Width="96"
+                                Command="{Binding $parent[UserControl].((vm:ObjectBrowserViewModel)DataContext).SelectForPlacementCommand}"
+                                CommandParameter="{Binding}"
+                                ToolTip.Tip="{Binding Tags}"
+                                HorizontalContentAlignment="Center"
+                                PointerPressed="ObjectCard_PointerPressed"
+                                PointerMoved="ObjectCard_PointerMoved">
+                                <StackPanel Spacing="6" HorizontalAlignment="Center">
+                                    <Panel Width="80" Height="80">
+                                        <Border
+                                            Background="#1e1435"
+                                            BorderBrush="#2a1d42"
+                                            BorderThickness="1"
+                                            CornerRadius="6"
+                                            IsVisible="{Binding Thumbnail, Converter={x:Static ObjectConverters.IsNull}}" />
+                                        <Border CornerRadius="6" ClipToBounds="True"
+                                                IsVisible="{Binding Thumbnail, Converter={x:Static ObjectConverters.IsNotNull}}">
+                                        <Image
+                                            Width="80"
+                                            Height="80"
+                                            Source="{Binding Thumbnail}"
+                                                Stretch="Uniform" />
+                                        </Border>
+                                        <Button Classes="toolbar-btn"
+                                                Padding="2,0"
+                                                HorizontalAlignment="Left"
+                                                VerticalAlignment="Bottom"
+                                                Command="{Binding $parent[UserControl].((vm:ObjectBrowserViewModel)DataContext).ToggleFavoriteCommand}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip.Tip="Toggle favorite"
+                                                Cursor="Hand"
+                                                Focusable="False">
+                                            <Panel>
+                                                <TextBlock Text="&#x2605;" FontSize="12" Foreground="#d4a843"
+                                                           IsVisible="{Binding IsFavorite}" />
+                                                <TextBlock Text="&#x2606;" FontSize="12" Foreground="#8a7a9e"
+                                                           IsVisible="{Binding !IsFavorite}" />
+                                            </Panel>
+                                        </Button>
+                                    </Panel>
+                                    <TextBlock
+                                        Text="{Binding DisplayId}"
+                                        FontSize="11"
+                                        Foreground="#c0b0d8"
+                                        HorizontalAlignment="Center"
+                                        TextWrapping="Wrap"
+                                        TextTrimming="CharacterEllipsis"
+                                        MaxHeight="32"
+                                        MaxWidth="88" />
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <Button
+                    Content="Show more"
+                    Classes="ghost"
+                    Command="{Binding ShowMoreCommand}"
+                    IsVisible="{Binding HasMore}"
+                    HorizontalAlignment="Center"
+                    Margin="4,12,4,4" />
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

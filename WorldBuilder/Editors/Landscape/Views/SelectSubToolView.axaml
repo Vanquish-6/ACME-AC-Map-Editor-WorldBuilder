@@ -1,0 +1,99 @@
+<UserControl
+    x:Class="WorldBuilder.Editors.Landscape.Views.SelectSubToolView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:WorldBuilder.Editors.Landscape.ViewModels"
+    d:DesignHeight="500"
+    d:DesignWidth="280"
+    x:CompileBindings="True"
+    x:DataType="vm:SelectSubToolViewModel"
+    mc:Ignorable="d">
+    <StackPanel Spacing="8">
+
+        <!--  Help text  -->
+        <TextBlock
+            Text="Click an object to select it. W moves, E rotates, R scales. F frames the selection. Ctrl+D duplicates."
+            FontSize="11"
+            Foreground="{DynamicResource SystemBaseMediumColor}"
+            Opacity="0.7"
+            TextWrapping="Wrap" />
+
+        <!--  Selection Info  -->
+        <Border
+            Padding="8"
+            Background="{DynamicResource SystemControlBackgroundListLowBrush}"
+            CornerRadius="4">
+            <StackPanel Spacing="4">
+                <TextBlock Text="{Binding SelectedObjectInfo}" FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <TextBlock FontSize="10" Opacity="0.7" Text="Position and rotation below. DAT IDs are under Advanced."
+                           TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+        <!--  Editable Properties (only for document objects, not scenery)  -->
+        <StackPanel Spacing="8" IsVisible="{Binding HasEditableSelection}">
+            <Separator />
+
+            <!--  Position  -->
+            <TextBlock FontSize="12" FontWeight="SemiBold" Text="Position" />
+            <Grid ColumnDefinitions="30,*" RowDefinitions="Auto,Auto,Auto" Margin="0,0,0,0">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="X" VerticalAlignment="Center" FontSize="11" Opacity="0.7" />
+                <NumericUpDown Grid.Row="0" Grid.Column="1" Value="{Binding PositionX}" Increment="1" FormatString="F1" FontSize="11" Padding="4,2" Margin="0,0,0,2" />
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Y" VerticalAlignment="Center" FontSize="11" Opacity="0.7" />
+                <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding PositionY}" Increment="1" FormatString="F1" FontSize="11" Padding="4,2" Margin="0,0,0,2" />
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="Z" VerticalAlignment="Center" FontSize="11" Opacity="0.7" />
+                <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding PositionZ}" Increment="1" FormatString="F1" FontSize="11" Padding="4,2" />
+            </Grid>
+            <Grid ColumnDefinitions="*,*" Margin="0,2,0,0">
+                <Button Grid.Column="0" Content="Apply Position" Command="{Binding ApplyPositionCommand}" FontSize="11" Padding="8,3" HorizontalAlignment="Stretch" Margin="0,0,2,0" />
+                <Button Grid.Column="1" Content="Snap to Terrain" Command="{Binding SnapToTerrainCommand}" FontSize="11" Padding="8,3" HorizontalAlignment="Stretch" Margin="2,0,0,0" />
+            </Grid>
+            <Button Content="Align to Surface" Command="{Binding AlignToSurfaceCommand}" FontSize="11" Padding="8,3" HorizontalAlignment="Stretch" Margin="0,2,0,0" ToolTip.Tip="Orient object to match terrain slope" />
+
+            <!--  Rotation  -->
+            <TextBlock FontSize="12" FontWeight="SemiBold" Text="Rotation (degrees)" />
+            <Grid ColumnDefinitions="30,*" RowDefinitions="Auto,Auto,Auto" Margin="0,0,0,0">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="X" VerticalAlignment="Center" FontSize="11" Opacity="0.7" />
+                <NumericUpDown Grid.Row="0" Grid.Column="1" Value="{Binding RotationX}" Increment="5" FormatString="F1" Minimum="-360" Maximum="360" FontSize="11" Padding="4,2" Margin="0,0,0,2" />
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Y" VerticalAlignment="Center" FontSize="11" Opacity="0.7" />
+                <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding RotationY}" Increment="5" FormatString="F1" Minimum="-360" Maximum="360" FontSize="11" Padding="4,2" Margin="0,0,0,2" />
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="Z" VerticalAlignment="Center" FontSize="11" Opacity="0.7" />
+                <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding RotationZ}" Increment="5" FormatString="F1" Minimum="-360" Maximum="360" FontSize="11" Padding="4,2" />
+            </Grid>
+            <Button Content="Apply Rotation" Command="{Binding ApplyRotationCommand}" FontSize="11" Padding="8,3" HorizontalAlignment="Stretch" />
+        </StackPanel>
+
+        <Expander Header="Advanced" FontSize="11" Margin="0,4,0,0">
+            <StackPanel Spacing="6" Margin="0,8,0,0">
+                <TextBlock FontSize="10" Opacity="0.7" TextWrapping="Wrap"
+                           Text="DAT object IDs and landcell numbers. Change these only if you know the portal DAT layout." />
+                <TextBlock Text="{Binding SelectedObjectId}" FontSize="11" FontFamily="Consolas"
+                           IsVisible="{Binding SelectedObjectId, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                <TextBlock Text="{Binding LandcellText, StringFormat='Landcell: {0}'}" FontSize="11" FontFamily="Consolas" Opacity="0.7"
+                           IsVisible="{Binding LandcellText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
+        </Expander>
+
+        <Separator />
+
+        <!--  Keyboard shortcuts  -->
+        <TextBlock
+            FontSize="10"
+            Foreground="{DynamicResource SystemBaseMediumColor}"
+            Opacity="0.6"
+            Text="W: Translate  |  E: Rotate  |  R: Scale"
+            TextWrapping="Wrap" />
+        <TextBlock
+            FontSize="10"
+            Foreground="{DynamicResource SystemBaseMediumColor}"
+            Opacity="0.6"
+            Text="Ctrl+C: Copy  |  Ctrl+V: Paste  |  Del: Remove  |  Esc: Cancel"
+            TextWrapping="Wrap" />
+    </StackPanel>
+</UserControl>

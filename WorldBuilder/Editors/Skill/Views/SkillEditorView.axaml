@@ -1,0 +1,313 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:WorldBuilder.Editors.Skill"
+             xmlns:shared="using:WorldBuilder.Views"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+             x:Class="WorldBuilder.Editors.Skill.Views.SkillEditorView"
+             x:DataType="vm:SkillEditorViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="TextBlock.section-header">
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#d8d0ec" />
+            <Setter Property="Margin" Value="0,14,0,6" />
+        </Style>
+        <Style Selector="TextBlock.field-label">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#b0a0c8" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Width" Value="120" />
+        </Style>
+        <Style Selector="TextBox.field-input">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="Padding" Value="8,4" />
+        </Style>
+        <Style Selector="ComboBox.field-input">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="MinHeight" Value="30" />
+        </Style>
+        <Style Selector="Button.toolbar-btn">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Foreground" Value="#a89bbe" />
+        </Style>
+        <Style Selector="Button.toolbar-btn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#33ffffff" />
+            <Setter Property="Foreground" Value="#e0d8ef" />
+        </Style>
+        <Style Selector="TextBlock.help-icon">
+            <Setter Property="Text" Value="?" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#8a7a9e" />
+            <Setter Property="Background" Value="#2e1e48" />
+            <Setter Property="Padding" Value="6,2" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="6,0,0,0" />
+        </Style>
+        <Style Selector="CheckBox.field-check">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="#c0b0d8" />
+        </Style>
+        <Style Selector="Button.sm-btn">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="#2a1d42" />
+            <Setter Property="Padding" Value="6,2" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="CornerRadius" Value="3" />
+            <Setter Property="Foreground" Value="#a89bbe" />
+        </Style>
+        <Style Selector="Button.sm-btn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#33ffffff" />
+            <Setter Property="Foreground" Value="#e0d8ef" />
+        </Style>
+    </UserControl.Styles>
+
+    <DockPanel>
+        <!-- Toolbar -->
+        <Border DockPanel.Dock="Top" Background="#120c22" BorderBrush="#2a1d42" BorderThickness="0,0,0,1" Padding="4,2">
+            <DockPanel>
+                <StackPanel Orientation="Horizontal" Spacing="4" DockPanel.Dock="Left">
+                    <Button Classes="primary" Content="Save Skill" Command="{Binding SaveSkillCommand}" />
+                    <Button Classes="toolbar-btn" Content="+ New Skill" Command="{Binding AddSkillCommand}" />
+                    <Button Classes="danger" Content="Delete Skill" Command="{Binding DeleteSkillCommand}" />
+                    <Border Width="1" Background="#2a1d42" Margin="4,2" />
+                    <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" FontSize="12" Foreground="#a89bbe" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8" DockPanel.Dock="Right" HorizontalAlignment="Right">
+                    <TextBlock Text="{Binding FilteredSkillCount, StringFormat='Showing {0}'}" VerticalAlignment="Center" FontSize="12" Foreground="#8a7a9e" />
+                    <TextBlock Text="{Binding TotalSkillCount, StringFormat='of {0} skills'}" VerticalAlignment="Center" FontSize="12" Foreground="#8a7a9e" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <shared:EditorGuideBanner DockPanel.Dock="Top"
+                                  Margin="10,8,10,0"
+                                  Title="Skills"
+                                  Body="These are the skills characters train. Pick one on the left, change its name, costs, or description, then Save Skill." />
+
+        <Grid ColumnDefinitions="300,1,*">
+            <!-- Left panel: Skill list -->
+            <DockPanel Grid.Column="0" Background="#1a1030">
+                <Border DockPanel.Dock="Top" Background="#120c22" Padding="8,6" BorderBrush="#2a1d42" BorderThickness="0,0,0,1">
+                    <StackPanel Spacing="6">
+                        <TextBox Text="{Binding SearchText}" Watermark="Search skills by name..." FontSize="13" MinHeight="30" Padding="8,4" />
+                        <DockPanel>
+                            <Button DockPanel.Dock="Right" Classes="toolbar-btn" Content="Clear" Command="{Binding ClearFiltersCommand}" Margin="4,0,0,0" />
+                            <ComboBox ItemsSource="{Binding CategoryOptions}" SelectedItem="{Binding FilterCategory}" PlaceholderText="Category" MinWidth="120" FontSize="12" MinHeight="26" />
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+                <ListBox ItemsSource="{Binding Skills}" SelectedItem="{Binding SelectedSkill}" Background="Transparent" FontSize="12">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SkillListItem">
+                            <DockPanel Margin="6,3">
+                                <TextBlock DockPanel.Dock="Right" Text="{Binding Category}" FontSize="11" Foreground="#8a7a9e" VerticalAlignment="Center" Margin="8,0,0,0" />
+                                <StackPanel>
+                                    <TextBlock Text="{Binding Name}" Foreground="#e0d8ef" FontSize="14" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <TextBlock Text="{Binding IdHex}" FontSize="11" Foreground="#8a7a9e" />
+                                        <TextBlock Text="{Binding TrainedCost, StringFormat='Train: {0}'}" FontSize="11" Foreground="#8a7a9e" />
+                                        <TextBlock Text="{Binding SpecializedCost, StringFormat='Spec: {0}'}" FontSize="11" Foreground="#8a7a9e" />
+                                    </StackPanel>
+                                </StackPanel>
+                            </DockPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+
+            <GridSplitter Grid.Column="1" Width="1" Background="#2a1d42" ResizeDirection="Columns" />
+
+            <!-- Right panel: Skill detail -->
+            <Border Grid.Column="2" Background="#1a1030">
+                <Panel>
+                    <Border Classes="empty-state"
+                            IsVisible="{Binding SelectedDetail, Converter={x:Static ObjectConverters.IsNull}}">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Pick a skill"
+                                       FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Foreground="#d8d0ec"
+                                       HorizontalAlignment="Center" />
+                            <TextBlock Classes="hint"
+                                       TextAlignment="Center"
+                                       Text="Search or scroll the list on the left. Each skill has a name, description, and training costs the client reads from the DAT." />
+                        </StackPanel>
+                    </Border>
+
+                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                                  IsVisible="{Binding SelectedDetail, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <StackPanel Margin="16,8,16,16" Spacing="4"
+                                    x:CompileBindings="False"
+                                    x:Name="DetailPanel"
+                                    DataContext="{Binding SelectedDetail}">
+
+                            <!-- Identity + Icon -->
+                            <TextBlock Classes="section-header" Text="Identity" />
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <StackPanel Spacing="4">
+                                    <Border Width="48" Height="48" Background="#221840" CornerRadius="4"
+                                            BorderBrush="#2a1d42" BorderThickness="1">
+                                        <Image Source="{Binding IconBitmap}" Width="48" Height="48" Stretch="Uniform" />
+                                    </Border>
+                                    <Button Classes="sm-btn" Content="Browse..."
+                                            Command="{Binding ToggleIconPickerCommand}"
+                                            HorizontalAlignment="Center" />
+                                </StackPanel>
+                                <StackPanel Spacing="4" VerticalAlignment="Top">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <TextBlock Classes="field-label" Text="Skill ID" Width="90" />
+                                        <TextBlock Text="{Binding SkillId}" FontSize="13" Foreground="#b0a0c8" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <TextBlock Classes="field-label" Text="Icon ID" Width="90" />
+                                        <TextBox Classes="field-input" Text="{Binding IconId}" Width="100" />
+                                        <TextBlock Classes="help-icon" ToolTip.Tip="DataID for the skill icon (0x06xxxxxx range). Type an ID or use Browse to pick visually." />
+                                    </StackPanel>
+                                </StackPanel>
+                            </StackPanel>
+
+                            <!-- Icon Picker Grid -->
+                            <Border IsVisible="{Binding IsIconPickerOpen}"
+                                    Background="#221840" CornerRadius="6" Padding="8"
+                                    BorderBrush="#3a2d52" BorderThickness="1"
+                                    MaxHeight="220" Margin="0,4">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Top" Text="Pick an icon:" FontSize="11" Foreground="#b0a0c8" Margin="0,0,0,6" />
+                                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                        <ItemsControl ItemsSource="{Binding AvailableIcons}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <WrapPanel />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Background="Transparent" BorderThickness="1" BorderBrush="#2a1d42"
+                                                            CornerRadius="3" Padding="2" Margin="2"
+                                                            Command="{Binding #DetailPanel.DataContext.PickIconCommand}"
+                                                            CommandParameter="{Binding}"
+                                                            ToolTip.Tip="{Binding IdHex}">
+                                                        <Image Source="{Binding Bitmap}" Width="32" Height="32" Stretch="Uniform" />
+                                                    </Button>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </DockPanel>
+                            </Border>
+
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Classes="field-label" Text="Name" />
+                                <TextBox Classes="field-input" Text="{Binding Name}" Width="300" />
+                                <TextBlock Classes="help-icon" ToolTip.Tip="Display name of the skill as shown in the character panel and skill list." />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Classes="field-label" Text="Description" />
+                                <TextBox Classes="field-input" Text="{Binding Description}" Width="400"
+                                         AcceptsReturn="True" TextWrapping="Wrap" MinHeight="60" MaxHeight="120" />
+                                <TextBlock Classes="help-icon" ToolTip.Tip="Descriptive text for the skill, shown when examining or hovering over the skill." />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Classes="field-label" Text="Category" />
+                                <ComboBox Classes="field-input" ItemsSource="{Binding AllCategories}" SelectedItem="{Binding Category}" MinWidth="160" />
+                                <TextBlock Classes="help-icon" ToolTip.Tip="Skill category: Combat, Magic, Other, or Undefined. Controls grouping in the skill panel." />
+                            </StackPanel>
+
+                            <!-- Training Costs -->
+                            <TextBlock Classes="section-header" Text="Training Costs" />
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Classes="field-label" Text="Trained Cost" />
+                                <TextBox Classes="field-input" Text="{Binding TrainedCost}" Width="100" />
+                                <TextBlock Classes="help-icon" ToolTip.Tip="Number of skill credits required to train this skill." />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Classes="field-label" Text="Specialized Cost" />
+                                <TextBox Classes="field-input" Text="{Binding SpecializedCost}" Width="100" />
+                                <TextBlock Classes="help-icon" ToolTip.Tip="Number of skill credits required to specialize this skill (in addition to trained cost)." />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Classes="field-label" Text="Chargen Use" />
+                                <CheckBox Classes="field-check" IsChecked="{Binding ChargenUse}" />
+                                <TextBlock Classes="help-icon" ToolTip.Tip="Whether this skill can be trained/specialized during character creation." />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Classes="field-label" Text="Min Level" />
+                                <TextBox Classes="field-input" Text="{Binding MinLevel}" Width="100" />
+                                <TextBlock Classes="help-icon" ToolTip.Tip="Minimum character level required to train this skill." />
+                            </StackPanel>
+
+                            <!-- Bounds & Learning -->
+                            <TextBlock Classes="section-header" Text="Bounds &amp; Learning" />
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Classes="field-label" Text="Upper Bound" />
+                                <TextBox Classes="field-input" Text="{Binding UpperBound}" Width="100" />
+                                <TextBlock Classes="help-icon" ToolTip.Tip="Upper bound for the skill's XP-to-level curve. Controls how much XP is needed at higher skill levels." />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Classes="field-label" Text="Lower Bound" />
+                                <TextBox Classes="field-input" Text="{Binding LowerBound}" Width="100" />
+                                <TextBlock Classes="help-icon" ToolTip.Tip="Lower bound for the skill's XP-to-level curve. Controls the starting point of the XP curve." />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Classes="field-label" Text="Learn Mod" />
+                                <TextBox Classes="field-input" Text="{Binding LearnMod}" Width="100" />
+                                <TextBlock Classes="help-icon" ToolTip.Tip="Learning modifier that scales the XP cost curve. Higher values mean the skill costs more XP to raise." />
+                            </StackPanel>
+
+                            <!-- Formula -->
+                            <TextBlock Classes="section-header" Text="Formula" />
+                            <Border Background="#221840" CornerRadius="6" Padding="12,8" Margin="0,4"
+                                    BorderBrush="#2a1d42" BorderThickness="1">
+                                <StackPanel Spacing="4">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <TextBlock Classes="field-label" Text="Use Formula" />
+                                        <CheckBox Classes="field-check" IsChecked="{Binding FormulaUseFormula}" />
+                                        <TextBlock Classes="help-icon" ToolTip.Tip="If false, the skill uses only its base trained/specialized value without attribute contributions." />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <TextBlock Classes="field-label" Text="Attribute 1" />
+                                        <ComboBox Classes="field-input" ItemsSource="{Binding AllAttributes}" SelectedItem="{Binding FormulaAttribute1}" MinWidth="160" />
+                                        <TextBlock Classes="help-icon" ToolTip.Tip="Primary attribute used in the skill formula: (Attribute1 + Attribute2?) / Divisor." />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <TextBlock Classes="field-label" Text="Has 2nd Attr" />
+                                        <CheckBox Classes="field-check" IsChecked="{Binding FormulaHasSecondAttribute}" />
+                                        <TextBlock Classes="help-icon" ToolTip.Tip="If true, a second attribute is added to the first before dividing." />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <TextBlock Classes="field-label" Text="Attribute 2" />
+                                        <ComboBox Classes="field-input" ItemsSource="{Binding AllAttributes}" SelectedItem="{Binding FormulaAttribute2}" MinWidth="160" />
+                                        <TextBlock Classes="help-icon" ToolTip.Tip="Secondary attribute used in the skill formula. Only used when Has 2nd Attr is checked." />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <TextBlock Classes="field-label" Text="Divisor" />
+                                        <TextBox Classes="field-input" Text="{Binding FormulaDivisor}" Width="100" />
+                                        <TextBlock Classes="help-icon" ToolTip.Tip="Divisor in the formula: (Attribute1 + Attribute2?) / Divisor. Typically 2 or 3." />
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <TextBlock Classes="field-label" Text="Unknown" />
+                                        <TextBox Classes="field-input" Text="{Binding FormulaUnknown}" Width="100" />
+                                        <TextBlock Classes="help-icon" ToolTip.Tip="Unknown field in the SkillFormula structure. Typically 0." />
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Panel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</UserControl>

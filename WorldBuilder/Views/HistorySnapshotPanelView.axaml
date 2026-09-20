@@ -1,0 +1,149 @@
+<UserControl
+    x:Class="WorldBuilder.Views.HistorySnapshotPanelView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:conv="clr-namespace:WorldBuilder.Lib.Converters"
+    xmlns:i="using:Avalonia.Xaml.Interactivity"
+    xmlns:ia="using:Avalonia.Xaml.Interactions.Core"
+    xmlns:vm="using:WorldBuilder.ViewModels"
+    x:CompileBindings="False"
+    x:DataType="vm:HistorySnapshotPanelViewModel">
+    <UserControl.Resources>
+        <conv:IsNotZeroConverter x:Key="IsNotZeroConverter" />
+    </UserControl.Resources>
+    <UserControl.Styles>
+        <Style Selector="ListBoxItem.current /template/ ContentPresenter">
+            <Setter Property="Background" Value="#351a55" />
+        </Style>
+        <Style Selector="DockPanel.dimmed">
+            <Setter Property="Opacity" Value="0.45" />
+        </Style>
+    </UserControl.Styles>
+
+    <DockPanel LastChildFill="True">
+        <StackPanel
+            Margin="10,8"
+            HorizontalAlignment="Right"
+            DockPanel.Dock="Top"
+            Orientation="Horizontal"
+            Spacing="2">
+            <Button
+                Classes="toolbar-btn"
+                Command="{Binding CreateSnapshotCommand}"
+                Content="Snapshot"
+                ToolTip.Tip="Save a named snapshot" />
+            <Button
+                Classes="toolbar-btn"
+                Command="{Binding DeleteItemCommand}"
+                CommandParameter="{Binding SelectedItem}"
+                Content="Delete"
+                IsEnabled="{Binding SelectedItem, Converter={x:Static conv:ObjectConverters.IsNotNull}}"
+                ToolTip.Tip="Delete selected" />
+            <Button
+                Classes="toolbar-btn"
+                Command="{Binding RevertToStateCommand}"
+                CommandParameter="{Binding SelectedItem}"
+                Content="Revert"
+                IsEnabled="{Binding CanRevert}"
+                ToolTip.Tip="Revert to selected state" />
+        </StackPanel>
+        <ScrollViewer>
+            <StackPanel Margin="8,0,8,12" Spacing="12">
+                <StackPanel IsVisible="{Binding SnapshotItems.Count, Converter={StaticResource IsNotZeroConverter}}"
+                            Spacing="6">
+                    <TextBlock Classes="muted" Text="Snapshots" />
+                        <ListBox
+                            x:Name="SnapshotsListBox"
+                        BorderThickness="0"
+                            ItemsSource="{Binding SnapshotItems}"
+                            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                            SelectedItem="{Binding SelectedSnapshot}">
+                            <i:Interaction.Behaviors>
+                                <ia:EventTriggerBehavior EventName="SelectionChanged">
+                                    <ia:InvokeCommandAction Command="{Binding SelectSnapshotCommand}" CommandParameter="{Binding #SnapshotsListBox.SelectedItem}" />
+                                </ia:EventTriggerBehavior>
+                                <ia:EventTriggerBehavior EventName="DoubleTapped">
+                                    <ia:InvokeCommandAction Command="{Binding RenameSnapshotCommand}" CommandParameter="{Binding #SnapshotsListBox.SelectedItem}" />
+                                </ia:EventTriggerBehavior>
+                            </i:Interaction.Behaviors>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:HistoryListItem">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Right"
+                                               Classes="muted"
+                                               FontSize="11"
+                                               VerticalAlignment="Center"
+                                               Text="{Binding Timestamp, StringFormat='{}{0:g}'}" />
+                                    <TextBlock Text="{Binding Description}"
+                                               Foreground="#e8e0f4"
+                                               TextTrimming="CharacterEllipsis" />
+                                </DockPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                            <ListBox.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem
+                                        Command="{Binding RevertToStateCommand}"
+                                        CommandParameter="{Binding #SnapshotsListBox.SelectedItem}"
+                                        Header="Revert to This Snapshot" />
+                                    <MenuItem
+                                        Command="{Binding RenameSnapshotCommand}"
+                                        CommandParameter="{Binding #SnapshotsListBox.SelectedItem}"
+                                        Header="Rename" />
+                                    <MenuItem
+                                        Command="{Binding DeleteItemCommand}"
+                                        CommandParameter="{Binding #SnapshotsListBox.SelectedItem}"
+                                        Header="Delete" />
+                                </ContextMenu>
+                            </ListBox.ContextMenu>
+                        </ListBox>
+                    </StackPanel>
+
+                <StackPanel IsVisible="{Binding HistoryItems.Count, Converter={StaticResource IsNotZeroConverter}}"
+                            Spacing="6">
+                    <TextBlock Classes="muted" Text="Undo history" />
+                        <ListBox
+                            x:Name="HistoryListBox"
+                        BorderThickness="0"
+                            ItemsSource="{Binding HistoryItems}"
+                            ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                            SelectedItem="{Binding SelectedHistory}">
+                            <i:Interaction.Behaviors>
+                                <ia:EventTriggerBehavior EventName="SelectionChanged">
+                                    <ia:InvokeCommandAction Command="{Binding SelectHistoryItemCommand}" CommandParameter="{Binding #HistoryListBox.SelectedItem}" />
+                                </ia:EventTriggerBehavior>
+                            </i:Interaction.Behaviors>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:HistoryListItem">
+                                <DockPanel Classes.dimmed="{Binding IsDimmed}">
+                                    <TextBlock DockPanel.Dock="Left"
+                                               Width="56"
+                                               Classes="muted"
+                                               FontSize="11"
+                                               VerticalAlignment="Center"
+                                               Text="{Binding IsOriginalDocument, Converter={x:Static conv:BoolToStringConverter.DocumentOrHistory}}" />
+                                    <TextBlock Text="{Binding Description}"
+                                               Foreground="#e8e0f4"
+                                               TextTrimming="CharacterEllipsis" />
+                                </DockPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                            <ListBox.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem
+                                        Command="{Binding RevertToStateCommand}"
+                                        CommandParameter="{Binding #HistoryListBox.SelectedItem}"
+                                        Header="Revert to This State" />
+                                    <MenuItem
+                                        Command="{Binding DeleteItemCommand}"
+                                        CommandParameter="{Binding #HistoryListBox.SelectedItem}"
+                                        Header="Delete"
+                                        IsVisible="{Binding #HistoryListBox.SelectedItem.IsOriginalDocument, Converter={x:Static conv:BoolConverters.Not}}" />
+                                </ContextMenu>
+                            </ListBox.ContextMenu>
+                        </ListBox>
+                    </StackPanel>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

@@ -1,0 +1,44 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WorldBuilder.Editors.Dungeon"
+             x:Class="WorldBuilder.Editors.Dungeon.Views.DungeonSceneHierarchyView"
+             x:DataType="vm:DungeonSceneHierarchyViewModel">
+    <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Margin="10,10,10,6" Spacing="6">
+            <TextBox Text="{Binding SearchText}" Watermark="Find rooms or objects…" FontSize="11" />
+            <WrapPanel>
+                <Button Classes="toolbar-btn" Content="Frame" Command="{Binding FrameSelectedCommand}"
+                        ToolTip.Tip="Move the camera to the selection (F)" />
+                <Button Classes="toolbar-btn" Content="Hide" Command="{Binding ToggleHiddenCommand}"
+                        ToolTip.Tip="Hide or show the selected room" />
+                <Button Classes="toolbar-btn" Content="Lock" Command="{Binding ToggleLockedCommand}"
+                        ToolTip.Tip="Lock to prevent accidental moves" />
+                <Button Classes="toolbar-btn" Content="Group" Command="{Binding GroupSelectedCommand}"
+                        ToolTip.Tip="Group the currently selected rooms" />
+                <Button Classes="toolbar-btn" Content="Ungroup" Command="{Binding UngroupSelectedCommand}" />
+            </WrapPanel>
+            <TextBlock Classes="muted" Text="{Binding StatusText}" TextWrapping="Wrap" />
+        </StackPanel>
+        <ListBox ItemsSource="{Binding Nodes}" SelectedItem="{Binding SelectedNode}"
+                 Background="Transparent" FontSize="11">
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:DungeonSceneNode">
+                    <Grid ColumnDefinitions="40,*,Auto,Auto" Margin="0,1">
+                        <TextBlock Grid.Column="0" Text="{Binding KindLabel}" Foreground="#8a7a9e"
+                                   VerticalAlignment="Center" FontSize="10" />
+                        <StackPanel Grid.Column="1" Spacing="0">
+                            <TextBlock Text="{Binding Name}" Foreground="#e8e0f4" TextTrimming="CharacterEllipsis" />
+                            <TextBlock Text="{Binding Detail}" Foreground="#5a4a6e" FontSize="10" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="2" Text="{Binding VisibilityLabel}" FontSize="10"
+                                   Foreground="#8a7a9e" Margin="6,0" VerticalAlignment="Center"
+                                   IsVisible="{Binding CanHide}" />
+                        <TextBlock Grid.Column="3" Text="{Binding LockLabel}" FontSize="10"
+                                   Foreground="#d4a843" Margin="4,0" VerticalAlignment="Center"
+                                   IsVisible="{Binding IsLocked}" />
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </DockPanel>
+</UserControl>

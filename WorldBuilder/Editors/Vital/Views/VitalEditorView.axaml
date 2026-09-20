@@ -1,0 +1,215 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:WorldBuilder.Editors.Vital"
+             xmlns:shared="using:WorldBuilder.Views"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="700"
+             x:Class="WorldBuilder.Editors.Vital.Views.VitalEditorView"
+             x:DataType="vm:VitalEditorViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="TextBlock.section-header">
+            <Setter Property="FontSize" Value="16" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#d8d0ec" />
+            <Setter Property="Margin" Value="0,16,0,8" />
+        </Style>
+        <Style Selector="TextBlock.field-label">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#b0a0c8" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Width" Value="140" />
+        </Style>
+        <Style Selector="TextBox.field-input">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="Padding" Value="8,4" />
+        </Style>
+        <Style Selector="ComboBox.field-input">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="MinHeight" Value="30" />
+        </Style>
+        <Style Selector="TextBlock.formula-display">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontFamily" Value="Consolas, Courier New" />
+            <Setter Property="Foreground" Value="#6ec07a" />
+            <Setter Property="Margin" Value="0,4,0,8" />
+        </Style>
+        <Style Selector="Button.toolbar-btn">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Foreground" Value="#a89bbe" />
+        </Style>
+        <Style Selector="Button.toolbar-btn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#33ffffff" />
+            <Setter Property="Foreground" Value="#e0d8ef" />
+        </Style>
+        <Style Selector="TextBlock.help-icon">
+            <Setter Property="Text" Value="?" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#8a7a9e" />
+            <Setter Property="Background" Value="#2e1e48" />
+            <Setter Property="Padding" Value="6,2" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="6,0,0,0" />
+        </Style>
+    </UserControl.Styles>
+
+    <DockPanel>
+        <!-- Toolbar -->
+        <Border DockPanel.Dock="Top" Background="#120c22" BorderBrush="#2a1d42" BorderThickness="0,0,0,1" Padding="4,2">
+            <DockPanel>
+                <StackPanel Orientation="Horizontal" Spacing="4" DockPanel.Dock="Left">
+                    <Button Classes="primary" Content="Save Vital Table" Command="{Binding SaveCommand}" />
+                    <Border Width="1" Background="#2a1d42" Margin="4,2" />
+                    <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" FontSize="12" Foreground="#a89bbe" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <shared:EditorGuideBanner DockPanel.Dock="Top"
+                                  Margin="10,8,10,0"
+                                  Title="Vitals"
+                                  Body="These formulas turn Strength, Endurance, and other attributes into Health, Stamina, and Mana. Change an attribute or divisor, then Save Vital Table." />
+
+        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Background="#1a1030">
+            <StackPanel Margin="24,8,24,24" Spacing="0">
+
+                <!-- Health -->
+                <Border Background="#221840" CornerRadius="6" Padding="16,12" Margin="0,8"
+                        BorderBrush="#2a1d42" BorderThickness="1"
+                        x:CompileBindings="False"
+                        x:Name="HealthPanel"
+                        DataContext="{Binding HealthFormula}">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Health" Classes="section-header" Margin="0,0,0,4" />
+                        <TextBlock Text="{Binding FormulaDisplay}" Classes="formula-display" />
+
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Classes="field-label" Text="Attribute 1" />
+                            <ComboBox Classes="field-input" ItemsSource="{Binding AllAttributes}" SelectedItem="{Binding Attribute1}" MinWidth="150" />
+                            <TextBlock Classes="help-icon" ToolTip.Tip="Primary attribute contributing to this vital's base value." />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Classes="field-label" Text="Attribute 2" />
+                            <ComboBox Classes="field-input" ItemsSource="{Binding AllAttributes}" SelectedItem="{Binding Attribute2}" MinWidth="150" />
+                            <TextBlock Classes="help-icon" ToolTip.Tip="Secondary attribute. Added to Attribute 1 before dividing. Only used when 'Has Second Attr' is checked." />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Classes="field-label" Text="Divisor" />
+                            <TextBox Classes="field-input" Text="{Binding Divisor}" Width="100" />
+                            <TextBlock Classes="help-icon" ToolTip.Tip="The divisor in the formula: base = (Attr1 + Attr2) / Divisor. Typically 2 or 3." />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Classes="field-label" Text="Has Second Attr" />
+                            <CheckBox IsChecked="{Binding HasSecondAttribute}" VerticalAlignment="Center" />
+                            <TextBlock Classes="help-icon" ToolTip.Tip="If checked, Attribute 2 is added to Attribute 1 before dividing. If unchecked, only Attribute 1 is used." />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Classes="field-label" Text="Use Formula" />
+                            <CheckBox IsChecked="{Binding UseFormula}" VerticalAlignment="Center" />
+                            <TextBlock Classes="help-icon" ToolTip.Tip="If unchecked, the vital ignores attributes and uses only its base trained value." />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Classes="field-label" Text="Unknown" />
+                            <TextBox Classes="field-input" Text="{Binding Unknown}" Width="100" />
+                            <TextBlock Classes="help-icon" ToolTip.Tip="Unknown field in the formula structure. Typically 0." />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Stamina -->
+                <Border Background="#221840" CornerRadius="6" Padding="16,12" Margin="0,8"
+                        BorderBrush="#2a1d42" BorderThickness="1"
+                        x:CompileBindings="False"
+                        x:Name="StaminaPanel"
+                        DataContext="{Binding StaminaFormula}">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Stamina" Classes="section-header" Margin="0,0,0,4" />
+                        <TextBlock Text="{Binding FormulaDisplay}" Classes="formula-display" />
+
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Classes="field-label" Text="Attribute 1" />
+                            <ComboBox Classes="field-input" ItemsSource="{Binding AllAttributes}" SelectedItem="{Binding Attribute1}" MinWidth="150" />
+                            <TextBlock Classes="help-icon" ToolTip.Tip="Primary attribute contributing to this vital's base value." />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Classes="field-label" Text="Attribute 2" />
+                            <ComboBox Classes="field-input" ItemsSource="{Binding AllAttributes}" SelectedItem="{Binding Attribute2}" MinWidth="150" />
+                            <TextBlock Classes="help-icon" ToolTip.Tip="Secondary attribute. Only used when 'Has Second Attr' is checked." />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Classes="field-label" Text="Divisor" />
+                            <TextBox Classes="field-input" Text="{Binding Divisor}" Width="100" />
+                            <TextBlock Classes="help-icon" ToolTip.Tip="Divisor: base = (Attr1 + Attr2) / Divisor." />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Classes="field-label" Text="Has Second Attr" />
+                            <CheckBox IsChecked="{Binding HasSecondAttribute}" VerticalAlignment="Center" />
+                            <TextBlock Classes="help-icon" ToolTip.Tip="If checked, both attributes are summed before dividing." />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Classes="field-label" Text="Use Formula" />
+                            <CheckBox IsChecked="{Binding UseFormula}" VerticalAlignment="Center" />
+                            <TextBlock Classes="help-icon" ToolTip.Tip="If unchecked, ignores attributes — uses only base trained value." />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Classes="field-label" Text="Unknown" />
+                            <TextBox Classes="field-input" Text="{Binding Unknown}" Width="100" />
+                            <TextBlock Classes="help-icon" ToolTip.Tip="Unknown field. Typically 0." />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Mana -->
+                <Border Background="#221840" CornerRadius="6" Padding="16,12" Margin="0,8"
+                        BorderBrush="#2a1d42" BorderThickness="1"
+                        x:CompileBindings="False"
+                        x:Name="ManaPanel"
+                        DataContext="{Binding ManaFormula}">
+                    <StackPanel Spacing="4">
+                        <TextBlock Text="Mana" Classes="section-header" Margin="0,0,0,4" />
+                        <TextBlock Text="{Binding FormulaDisplay}" Classes="formula-display" />
+
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Classes="field-label" Text="Attribute 1" />
+                            <ComboBox Classes="field-input" ItemsSource="{Binding AllAttributes}" SelectedItem="{Binding Attribute1}" MinWidth="150" />
+                            <TextBlock Classes="help-icon" ToolTip.Tip="Primary attribute contributing to this vital's base value." />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Classes="field-label" Text="Attribute 2" />
+                            <ComboBox Classes="field-input" ItemsSource="{Binding AllAttributes}" SelectedItem="{Binding Attribute2}" MinWidth="150" />
+                            <TextBlock Classes="help-icon" ToolTip.Tip="Secondary attribute. Only used when 'Has Second Attr' is checked." />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Classes="field-label" Text="Divisor" />
+                            <TextBox Classes="field-input" Text="{Binding Divisor}" Width="100" />
+                            <TextBlock Classes="help-icon" ToolTip.Tip="Divisor: base = (Attr1 + Attr2) / Divisor." />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Classes="field-label" Text="Has Second Attr" />
+                            <CheckBox IsChecked="{Binding HasSecondAttribute}" VerticalAlignment="Center" />
+                            <TextBlock Classes="help-icon" ToolTip.Tip="If checked, both attributes are summed before dividing." />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Classes="field-label" Text="Use Formula" />
+                            <CheckBox IsChecked="{Binding UseFormula}" VerticalAlignment="Center" />
+                            <TextBlock Classes="help-icon" ToolTip.Tip="If unchecked, ignores attributes — uses only base trained value." />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Classes="field-label" Text="Unknown" />
+                            <TextBox Classes="field-input" Text="{Binding Unknown}" Width="100" />
+                            <TextBlock Classes="help-icon" ToolTip.Tip="Unknown field. Typically 0." />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

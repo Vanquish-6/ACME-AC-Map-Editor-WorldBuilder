@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0</TargetFramework>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<LangVersion>12</LangVersion>
+		<Nullable>enable</Nullable>
+	</PropertyGroup>
+
+	<ItemGroup>
+		<ProjectReference Include="..\Acme.Dat\Acme.Dat.csproj" />
+		<EmbeddedResource Include="Data\dm_0x31_to_retail_string_map.json" />
+		<EmbeddedResource Include="Data\dm_chargen_layout_spec.json" />
+		<EmbeddedResource Include="Data\dm_connection_to_retail_string_map.json" />
+		<EmbeddedResource Include="Data\dm_exe_to_retail_string_map.json" />
+		<EmbeddedResource Include="Data\dm_ingame_layout_spec.json" />
+		<EmbeddedResource Include="Data\dm_ingame_to_retail_string_map.json" />
+		<EmbeddedResource Include="Data\retail_client_dat_spec.json" />
+		<PackageReference Include="MemoryPack" Version="1.21.4" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.9" />
+		<PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
+		<PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.9">
+			<PrivateAssets>all</PrivateAssets>
+			<IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+		</PackageReference>
+		<PackageReference Include="MySqlConnector" Version="2.5.0" />
+	</ItemGroup>
+
+	<ItemGroup>
+		<InternalsVisibleTo Include="WorldBuilder.Tests" />
+	</ItemGroup>
+</Project>

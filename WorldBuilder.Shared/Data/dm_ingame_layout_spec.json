@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "name": "in_game_panels",
+  "description": "Selective DM in-game layout overrides for retail gameplay panels. Current scope hides the retail-only Void school filter from the spellbook while keeping the retail panel tree intact.",
+  "layouts": [
+    {
+      "layoutId": "0x21000032",
+      "module": "gmSpellbookUI",
+      "clientField": "m_spellList",
+      "role": "spellbook_panel",
+      "sourceElementId": "0x10000295",
+      "notes": "Actual retail spellbook root resolved by gmSpellbookUI child ids 0x10000295 / 0x10000298 / 0x100005C0. This is not the naive 0x2100002E heuristic panel."
+    }
+  ],
+  "blockedFeatures": [],
+  "operations": [
+    {
+      "type": "set_bounds",
+      "layoutId": "0x21000032",
+      "elementId": "0x100005C0",
+      "x": 0,
+      "y": 0,
+      "width": 0,
+      "height": 0,
+      "notes": "Hide the retail-only Void school filter. DM CLIENT.EXE spellbook copy stops at Creature/Item/Life/War."
+    }
+  ]
+}

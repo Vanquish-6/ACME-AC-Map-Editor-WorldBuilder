@@ -1,0 +1,219 @@
+{
+  "version": 1,
+  "title": "Retail AC client DAT contract",
+  "purpose": "Authoritative invariants for retail-format client_*.dat folders used by ACME as editor/export target. Legacy import profiles are deltas on this base.",
+  "retail_files": [
+    "client_cell_1.dat",
+    "client_portal.dat",
+    "client_highres.dat",
+    "client_local_English.dat"
+  ],
+  "reference_seed": {
+    "label": "End-of-retail update seed (May 2026 baseline)",
+    "path_hint": "ac-updates",
+    "fingerprints": {
+      "client_portal.dat": {
+        "magic": "0x5442",
+        "block_size": 1024,
+        "header_size": "0x37400000",
+        "iter_field": 1,
+        "btree_root": "0x232D400",
+        "catalog_entries": 79694,
+        "spell_tables_0x0E": 14
+      },
+      "client_cell_1.dat": {
+        "magic": "0x5442",
+        "block_size": 256,
+        "header_size": "0x14C00000",
+        "iter_field": 2,
+        "btree_root": "0x1B77400",
+        "catalog_entries": 805348
+      },
+      "client_local_English.dat": {
+        "magic": "0x5442",
+        "block_size": 1024,
+        "header_size": "0x100000",
+        "iter_field": 3,
+        "btree_root": "0x2B000",
+        "layout_count_0x21": 101
+      },
+      "client_highres.dat": {
+        "magic": "0x5442",
+        "block_size": 1024,
+        "header_size": "0x7F00000",
+        "iter_field": 1,
+        "btree_root": "0x6811800"
+      }
+    }
+  },
+  "container": {
+    "header_offset": "0x140",
+    "magic": "0x5442",
+    "transaction_journal_offset": "0x100",
+    "transaction_journal_length": "0x40",
+    "iteration_object_id": "0xFFFF0001",
+    "invariants": [
+      "Exactly one B-tree catalog entry per file ID",
+      "Leaf branch slots must not contain 0xCDCDCDCD when branch[0] would imply traversal",
+      "Logical header file size must cover all catalog payload offsets (no past-EOF reads)",
+      "Converted exports use native no-op transaction journal, not retail seed replay journal",
+      "Overlay writes replace existing IDs in place via TryWriteFile/TryWriteFileBytes; never Tree.TryDelete before a write (delete-before-write corrupts B-tree ordering; TryDelete is reserved for genuine removals/dedupe repair)"
+    ]
+  },
+  "id_bands": {
+    "portal_shell_retail_bytes": {
+      "description": "Must remain retail-compatible bytes when present; editor overlay must not stamp retail metadata onto non-retail payloads",
+      "high_bytes": [
+        "0x0E",
+        "0x11",
+        "0x12",
+        "0x14",
+        "0x15",
+        "0x16",
+        "0x17",
+        "0x18",
+        "0x20",
+        "0x22",
+        "0x25",
+        "0x26",
+        "0x27",
+        "0x30",
+        "0x31",
+        "0x32",
+        "0x33",
+        "0x34",
+        "0x39",
+        "0x40",
+        "0x78"
+      ],
+      "exceptions": {
+        "0x0E000002": "CharGen table: retail heritage/setup shell; starting areas may be customized in import profiles"
+      }
+    },
+    "portal_globals": {
+      "0x13000000": "Region (terrain/world globals)",
+      "0xFFFF0001": "Iteration list"
+    },
+    "portal_spell_skill_vital_tables_0x0E_retail_seed": [
+      "0x0E000002",
+      "0x0E000003",
+      "0x0E000004",
+      "0x0E000007",
+      "0x0E00000D",
+      "0x0E00000E",
+      "0x0E00000F",
+      "0x0E000018",
+      "0x0E00001A",
+      "0x0E00001D",
+      "0x0E00001E",
+      "0x0E000020",
+      "0x0E010001",
+      "0x0E010002"
+    ],
+    "local_ui": {
+      "0x21000001": "Connect / patch / login layout (gmDataPatchUI)",
+      "0x21000039": "Char create wizard layout (gmCharGenMainUI)",
+      "0x23000010": "Connection error StringTable"
+    },
+    "cell_world": {
+      "landblock": "LandBlock at landblock id (upper 16 bits of cell)",
+      "landblock_info": "LandBlockInfo at (landblock << 16) | 0xFFFE",
+      "env_cell": "EnvCell at full cell id; outdoor spawns often reference LBI not EnvCell"
+    }
+  },
+  "client_load_phases": [
+    {
+      "phase": "dat_open",
+      "description": "Open four client_*.dat files; validate header magic and load B-tree",
+      "decompile_refs": [
+        "CThreadsafeDiskController::InitFile",
+        "CLBlockAllocator::OpenDataFile",
+        "BTree__LoadTree"
+      ],
+      "required_objects": [
+        "0xFFFF0001 on portal and cell catalogs"
+      ]
+    },
+    {
+      "phase": "portal_init",
+      "description": "Walk portal catalog; resolve client metadata enum maps and spell tables via GetByEnum",
+      "required_readable": [
+        "0x13000000 Region",
+        "portal client metadata bands 0x11-0x78"
+      ],
+      "invariants": [
+        "no duplicate catalog IDs",
+        "retail portal btree root preserved when overlaying content (0x232D400 on reference seed)"
+      ]
+    },
+    {
+      "phase": "local_init",
+      "description": "Load LayoutDesc and StringTable from client_local_English.dat",
+      "required_readable": [
+        "0x21000001 ConnectLayout",
+        "0x23000010 ConnectErrorsStringTable when connection strings patched"
+      ]
+    },
+    {
+      "phase": "char_select",
+      "description": "Char select UI; StringTable resolution uses client cache type 37",
+      "notes": [
+        "See ClientDbObjTypeMap StringTable entry"
+      ]
+    },
+    {
+      "phase": "char_create",
+      "description": "CharGen 0x0E000002 heritage groups resolve Setup and EnvironmentSetup chains in portal",
+      "required_readable": [
+        "0x0E000002 CharGen",
+        "each heritage SetupId and EnvironmentSetupId in portal",
+        "expanded render chain from CharGen shell collector"
+      ],
+      "layout": "0x21000039",
+      "decompile_refs": [
+        "ACCharGenResult.cpp",
+        "gmCharGenMainUI.cpp"
+      ]
+    },
+    {
+      "phase": "enter_world",
+      "description": "Spawn from character position; load cell landblock/LBI/EnvCell and terrain via Region",
+      "required_in_cell_dat": [
+        "LandBlockInfo for spawn landblock",
+        "EnvCell or outdoor cell resolution for indoor spawns"
+      ]
+    }
+  ],
+  "validation": {
+    "code_entry_points": [
+      "LegacyDatClientExportValidator.Validate",
+      "DatExportFixer.InspectReadCompatibility",
+      "OutsideProbe client-init / portal-dupes / chargen-audit"
+    ],
+    "hard_fail_conditions": [
+      "missing any of four retail files",
+      "missing 0xFFFF0001 iteration object",
+      "B-tree read compatibility issues on portal/cell/local",
+      "Region 0x13000000 not readable",
+      "duplicate portal catalog IDs",
+      "CharGen not readable when export uses retail CharGen shell"
+    ]
+  },
+  "transform_profiles": {
+    "note": "Import/conversion profiles (e.g. Dark Majesty) must declare deltas against this spec",
+    "supported_modes": {
+      "FullDm": "Everything DM (world, art, textures, CharGen, appearance tables) + DM UI replacing retail UI (DM 0x31/EXE wording + layout shapes on retail LayoutDesc skeleton; shared login/connect shell art stays retail bytes)",
+      "HalfDm": "DM world/textures/objs/setups/cells; retail UI, CharGen, appearance and spell/skill/vital tables"
+    },
+    "documents": [
+      "docs/RETAIL_DM_MERGE_MATRIX.md",
+      "docs/DM_ONLY_MAPPING.md",
+      "docs/DM_UI_DECOMPILE.md"
+    ],
+    "primary_policy_types": [
+      "LegacyDatExportPolicy",
+      "LegacyDatMergeRuleResolver"
+    ]
+  },
+  "type_map_doc": "docs/CLIENT_DBOBJ_TYPE_MAP.md"
+}

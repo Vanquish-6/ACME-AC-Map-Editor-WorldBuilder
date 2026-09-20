@@ -1,0 +1,27 @@
+{
+  "version": 3,
+  "defaultTableId": "0x23000002",
+  "notes": "DM CLIENT.EXE connect/patch/disconnect (FUN_00402ec0, FUN_004e2280, FUN_004efe20) -> retail StringTable. Layout gmDataPatchUI 0x21000001 unchanged. Logon/connection failure copy is patched on 0x23000010 (error popup), not 0x23000001 (context help).",
+  "entries": [
+    { "retailKey": 3318519, "dmText": "Connecting..." },
+    { "retailKey": 73246003, "dmText": "Connect progress" },
+    { "retailKey": 184756820, "dmText": "Connected!" },
+    { "retailKey": 105311076, "dmText": "The connection to the server has been lost!" },
+    { "retailKey": 198355464, "dmText": "The server has disconnected. Please try again in a few minutes." },
+    { "retailKey": 110731092, "dmText": "Your subscription to this game has expired." },
+
+    { "retailTableId": "0x23000001", "retailKey": 88608900, "dmText": "If approximately forty seconds pass without receiving a packet, you will be disconnected from the server." },
+    { "screen": "connection", "retailTableId": "0x23000001", "searchContains": "logon server", "gap": true, "notes": "Permanent gap: 0x23000001 has no logon-server help row (retail_stringtable scan). DM copy is patched on 0x23000010 retailKey 164627218 below." },
+    { "screen": "connection", "retailTableId": "0x23000001", "searchContains": "Failed to establish connection", "gap": true, "notes": "Permanent gap: 0x23000001 has no failed-connection help row. DM copy is patched on 0x23000010 searchContains 'error with this connection' below." },
+    { "retailTableId": "0x23000001", "searchContains": "Link Indicator shows", "dmText": "The Link Indicator shows the current status of your connection to the game servers." },
+
+    { "retailTableId": "0x23000010", "retailKey": 11004232, "dmText": "You do not have the current version of Asheron's Call installed." },
+    { "retailTableId": "0x23000010", "retailKey": 164627218, "dmText": "Client: There is no logon server for your account available.\nPlease try again in a few minutes." },
+    { "retailTableId": "0x23000010", "searchContains": "error with this connection", "dmText": "Failed to establish connection to the server.\nPlease try again in a few minutes.", "notes": "FUN_00402ec0 generic failure" },
+    { "retailTableId": "0x23000010", "searchContains": "Logon was aborted", "dmText": "Client: You are authorized to play this game, but too much time has passed \nsince you launched it.  Please launch the game again.\n", "notes": "FUN_00402ec0 session timeout; closest retail row" },
+    { "retailTableId": "0x23000010", "retailKey": 131034098, "dmText": "\n\nServer has not responded. Please try again later.", "notes": "FUN_004e2280; retail had Client timed out" },
+    { "retailTableId": "0x23000010", "retailKey": 234562926, "dmText": "\n\n\nServer connection lost", "notes": "FUN_004e2280" },
+    { "retailTableId": "0x23000010", "retailKey": 81763412, "dmText": "Client logon failed", "notes": "DM/retail same; ensures row present after export" },
+    { "retailTableId": "0x23000010", "retailKey": 52555188, "dmText": "Logon was aborted by the server.\nPlease try again." }
+  ]
+}

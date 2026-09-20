@@ -1,0 +1,32 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:WorldBuilder.Editors.Landscape.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="300" d:DesignHeight="400"
+             x:Class="WorldBuilder.Editors.Landscape.Views.ToolboxView"
+             x:DataType="vm:ToolboxViewModel">
+    <DockPanel LastChildFill="True">
+        <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="10,10,10,8">
+            <TextBlock Text="{Binding SelectedTool.Name, FallbackValue='No tool selected'}"
+                       FontWeight="SemiBold"
+                       FontSize="13"
+                       Foreground="#d4a843" />
+            <TextBlock Classes="muted" Text="{Binding CurrentToolHint}" />
+                <CheckBox IsChecked="{Binding SnapToGrid}"
+                          Content="Snap to grid"
+                      ToolTip.Tip="When moving or placing objects, snap position to the grid." />
+            </StackPanel>
+
+        <ScrollViewer>
+            <StackPanel Margin="10,0,10,16" Spacing="10">
+                <ContentControl HorizontalContentAlignment="Stretch"
+                                Content="{Binding SelectedSubTool}"
+                                IsVisible="{Binding SelectedSubTool, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                <TextBlock Classes="muted"
+                           Text="This tool has no extra options. Use the ribbon above to switch tools and sub-tools."
+                           IsVisible="{Binding SelectedSubTool, Converter={x:Static ObjectConverters.IsNull}}" />
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

@@ -1,0 +1,480 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:WorldBuilder.Editors.Dungeon"
+             xmlns:local="using:WorldBuilder.Editors.Dungeon.Views"
+             xmlns:dh="using:DialogHostAvalonia"
+             xmlns:docking="clr-namespace:WorldBuilder.Lib.Docking;assembly=WorldBuilder"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+             x:Class="WorldBuilder.Editors.Dungeon.Views.DungeonEditorView"
+             x:DataType="vm:DungeonEditorViewModel"
+             DragDrop.AllowDrop="True">
+
+    <UserControl.Styles>
+        <Style Selector="ToggleButton.vp-toggle">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Foreground" Value="#8a7a9e" />
+        </Style>
+        <Style Selector="ToggleButton.vp-toggle:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#33ffffff" />
+            <Setter Property="Foreground" Value="#c0b0d8" />
+        </Style>
+        <Style Selector="ToggleButton.vp-toggle:checked /template/ ContentPresenter">
+            <Setter Property="Background" Value="#7c4dbd" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="ToggleButton.vp-toggle:checked:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#9b6dd0" />
+        </Style>
+        <Style Selector="Button.vp-action">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Foreground" Value="#8a7a9e" />
+        </Style>
+        <Style Selector="Button.vp-action:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#33ffffff" />
+            <Setter Property="Foreground" Value="#c0b0d8" />
+        </Style>
+        <Style Selector="TabControl.dock-tabs">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+        <Style Selector="TabControl.dock-tabs > TabItem">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#6a5a7e" />
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="TabControl.dock-tabs > TabItem:pointerover">
+            <Setter Property="Foreground" Value="#c0b0d8" />
+            <Setter Property="Background" Value="#1e1035" />
+        </Style>
+        <Style Selector="TabControl.dock-tabs > TabItem:selected">
+            <Setter Property="Foreground" Value="#d4a843" />
+            <Setter Property="Background" Value="#1e1035" />
+        </Style>
+    </UserControl.Styles>
+
+    <dh:DialogHost Identifier="DungeonDialogHost"
+                   DialogMargin="0"
+                   CloseOnClickAway="True"
+                   OverlayBackground="#80000000">
+        <Grid x:Name="RootGrid">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0"
+                    Background="#140a20"
+                    BorderBrush="#2a1d42"
+                    BorderThickness="0,0,0,1"
+                    Padding="10,8">
+                <StackPanel Spacing="6">
+                <WrapPanel Orientation="Horizontal">
+                        <TextBlock Text="Tools"
+                                   FontWeight="Bold"
+                                   FontSize="12"
+                                   Foreground="#d4a843"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,4,0" />
+                        <ItemsControl ItemsSource="{Binding Tools}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Classes="tool-btn"
+                                            Classes.selected="{Binding IsSelected}"
+                                            Command="{Binding $parent[UserControl].((vm:DungeonEditorViewModel)DataContext).SelectToolCommand}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip.Tip="{Binding Description}">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <TextBlock FontSize="14" Text="{Binding IconGlyph}" />
+                                            <TextBlock FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Text="{Binding Name}" />
+                                        </StackPanel>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <StackPanel Orientation="Horizontal" Spacing="4"
+                                    VerticalAlignment="Center"
+                                    IsVisible="{Binding ShowFitControls}">
+                            <Border Width="1" Background="#2a1d42" Margin="4,2" />
+                            <Button Classes="ghost" Content="Next fit (R)" Command="{Binding CycleAttachDoorCommand}"
+                                    ToolTip.Tip="Try another way to seat this piece so it does not cover other doorways" />
+
+                        </StackPanel>
+                        <Button Classes="ghost" Content="Turn 90°" Command="{Binding RotateCellZPosCommand}"
+                                IsVisible="{Binding HasSelectedCell}"
+                                ToolTip.Tip="Rotate the selected room 90° around up" />
+                        </WrapPanel>
+                <WrapPanel Orientation="Horizontal">
+                <Border Width="1" Background="#2a1d42" Margin="4,2" />
+                        <Button Classes="ghost" Content="Open" Command="{Binding OpenLandblockCommand}"
+                                ToolTip.Tip="Open an existing dungeon landblock" />
+                        <Button Classes="ghost" Content="New" Command="{Binding NewDungeonCommand}"
+                                ToolTip.Tip="Start a blank dungeon and show starter rooms" />
+                        <Button Classes="primary" Content="{Binding SaveButtonText}" Command="{Binding SaveDungeonCommand}"
+                                ToolTip.Tip="Save dungeon edits to the project" />
+                        <Button Classes="ghost" Content="Build"
+                                ToolTip.Tip="Generate, copy a template, or pick a landblock ID">
+                            <Button.Flyout>
+                                <MenuFlyout Placement="BottomEdgeAlignedLeft">
+                                    <MenuItem Header="Generate..." Command="{Binding GenerateDungeonCommand}"
+                                              ToolTip.Tip="Build a new dungeon from proven retail room connections." />
+                                    <MenuItem Header="Start from template..." Command="{Binding StartFromTemplateCommand}"
+                                              ToolTip.Tip="Copy a retail dungeon into a new landblock." />
+                                    <MenuItem Header="New at landblock..." Command="{Binding NewDungeonAtLandblockCommand}"
+                                              ToolTip.Tip="Create an empty dungeon at a specific landblock ID." />
+                                    <Separator />
+                                    <MenuItem Header="Cap all open doorways" Command="{Binding CapAllOpenPortalsCommand}"
+                                              ToolTip.Tip="Seal every open doorway with a dead-end room." />
+                                    <MenuItem Header="Validate" Command="{Binding ValidateDungeonCommand}"
+                                              ToolTip.Tip="Run comprehensive validation checks." />
+                                    <MenuItem Header="Compute visibility" Command="{Binding ComputeVisibilityCommand}"
+                                              ToolTip.Tip="Compute VisibleCells (stab lists) for all cells." />
+                                    <Separator />
+                                    <MenuItem Header="Favorite individual pieces" Command="{Binding FavoriteDungeonPiecesCommand}"
+                                              ToolTip.Tip="Favorite corridors and rooms from this dungeon for generation." />
+                                    <MenuItem Header="Favorite as whole dungeon" Command="{Binding FavoriteDungeonWholeCommand}"
+                                              ToolTip.Tip="Save the entire dungeon as one reusable piece." />
+                                    <MenuItem Header="Clear all favorites" Command="{Binding ClearAllFavoritesCommand}" />
+                                </MenuFlyout>
+                            </Button.Flyout>
+                        </Button>
+                    </WrapPanel>
+                <WrapPanel>
+                <Button Classes="ghost" Content="Undo" Command="{Binding UndoCommand}" ToolTip.Tip="Undo the last edit (Ctrl+Z)" />
+                <Button Classes="ghost" Content="Redo" Command="{Binding RedoCommand}" ToolTip.Tip="Redo an undone edit (Ctrl+Y)" />
+                <Button Classes="ghost" Content="Reset view" Command="{Binding ResetCameraCommand}" ToolTip.Tip="Return the camera to a useful view" />
+                <Button Classes="ghost" Content="Check dungeon" Command="{Binding ValidateDungeonCommand}" IsEnabled="{Binding HasDungeon}" />
+                <Button Classes="ghost" Content="Quick guide">
+                <Button.Flyout>
+                <Flyout>
+                <StackPanel Width="340" Spacing="10">
+                <TextBlock Text="Dungeon workflow" FontSize="17" FontWeight="SemiBold" />
+                <StackPanel Spacing="3">
+                <TextBlock Text="1. Start a dungeon" FontWeight="SemiBold" />
+                <TextBlock Text="Open an existing dungeon, create an empty one, or use Build to generate or copy a template." TextWrapping="Wrap" />
+                </StackPanel>
+                <StackPanel Spacing="3">
+                <TextBlock Text="2. Add rooms" FontWeight="SemiBold" />
+                <TextBlock Text="In Rooms, click a starter hallway. Click a doorway until it turns yellow, then hover a palette room to preview and click to place." TextWrapping="Wrap" />
+                </StackPanel>
+                <StackPanel Spacing="3">
+                <TextBlock Text="3. Check your work" FontWeight="SemiBold" />
+                <TextBlock Text="Use Next fit if a piece does not fit. Walk as player to check scale — you can still place rooms and objects from that view. Save when ready." TextWrapping="Wrap" />
+                </StackPanel>
+                </StackPanel>
+                </Flyout>
+                </Button.Flyout>
+                </Button>
+                </WrapPanel>
+                <Border Classes="coach">
+                <Grid ColumnDefinitions="Auto,*">
+                <TextBlock Text="NEXT" Foreground="#d4a843" FontWeight="SemiBold" Margin="0,0,10,0" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding CurrentToolHint}" TextWrapping="Wrap" Foreground="#d8d0ec" />
+                </Grid>
+                </Border>
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Row="1"
+                    Background="#140a20"
+                    BorderBrush="#2a1d42"
+                    BorderThickness="0,0,0,1"
+                    IsVisible="{Binding DockingManager.TopPanels.Count}"
+                    MaxHeight="300">
+                <docking:DockRegionView Panels="{Binding DockingManager.TopPanels}"
+                                        IsTabbed="{Binding DockingManager.IsTopTabbed}"
+                                        IsSectioned="{Binding DockingManager.IsTopSectioned}"
+                                        ToggleModeCommand="{Binding DockingManager.ToggleTopModeCommand}"
+                                        StackSectionsVertically="False" />
+            </Border>
+
+            <Grid x:Name="MainGrid" Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="280" MinWidth="200" MaxWidth="500" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="280" MinWidth="200" MaxWidth="500" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0"
+                        Background="#140a20"
+                        BorderBrush="#2a1d42"
+                        BorderThickness="0,0,1,0"
+                        IsVisible="{Binding DockingManager.LeftPanels.Count}">
+                    <docking:DockRegionView Panels="{Binding DockingManager.LeftPanels}"
+                                            IsTabbed="{Binding DockingManager.IsLeftTabbed}"
+                                            IsSectioned="{Binding DockingManager.IsLeftSectioned}"
+                                            ToggleModeCommand="{Binding DockingManager.ToggleLeftModeCommand}"
+                                            StackSectionsVertically="True" />
+                </Border>
+
+                <GridSplitter Grid.Column="1"
+                              Width="4"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Stretch" />
+
+                <Grid Grid.Column="2" Background="#080010">
+                    <local:DungeonViewportControl />
+
+                    <Border Margin="0,8,0,0"
+                            Padding="3,2"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Top"
+                            Background="#DD120c22"
+                            BorderBrush="#442a1d42"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            BoxShadow="0 2 8 0 #40000000"
+                            IsVisible="{Binding HasDungeon}">
+                        <StackPanel Orientation="Horizontal" Spacing="1">
+                            <ToggleButton Classes="vp-toggle"
+                                          IsChecked="{Binding ShowGrid}"
+                                          ToolTip.Tip="Toggle grid">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <TextBlock Text="&#x2637;" FontSize="13" />
+                                    <TextBlock Text="Grid" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </ToggleButton>
+                            <ToggleButton Classes="vp-toggle"
+                                          IsChecked="{Binding ShowPortalIndicators}"
+                                          ToolTip.Tip="Toggle doorway markers">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <TextBlock Text="&#x25C7;" FontSize="13" />
+                                    <TextBlock Text="Doorways" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </ToggleButton>
+                            <ToggleButton Classes="vp-toggle"
+                                          IsChecked="{Binding ShowConnectionLines}"
+                                          ToolTip.Tip="Toggle portal connection lines">
+                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                    <TextBlock Text="&#x2194;" FontSize="13" />
+                                    <TextBlock Text="Links" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </ToggleButton>
+                            <Button Classes="vp-action"
+                                    Content="{Binding CameraModeText}"
+                                    Command="{Binding ToggleCameraModeCommand}"
+                                    ToolTip.Tip="Toggle between perspective and top-down" />
+                            <Button Classes="vp-action"
+                                    Content="{Binding PlayerPreviewButtonText}"
+                                    Command="{Binding TogglePlayerPreviewCommand}"
+                                    ToolTip.Tip="Walk at player height. You can still place rooms, objects, and doorways to check scale and fit. WASD, hold right mouse to look."
+                                    IsVisible="{Binding CanPlayerPreview}" />
+                            <Button Classes="vp-action"
+                                    Content="Reset view"
+                                    Command="{Binding ResetCameraCommand}"
+                                    ToolTip.Tip="Re-center camera on the dungeon (Home)" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border VerticalAlignment="Top" HorizontalAlignment="Center"
+                            Margin="0,48,0,0" Padding="16,8" CornerRadius="6"
+                            Background="#DD0a3040" BorderBrush="#4dbdbd" BorderThickness="1"
+                            IsVisible="{Binding ShowValidPlacementBanner}">
+                        <StackPanel Spacing="4" HorizontalAlignment="Center">
+                            <TextBlock Text="{Binding PlacementStatusText}" FontSize="15" FontWeight="SemiBold"
+                                       Foreground="#c8e8a0" HorizontalAlignment="Center" />
+                            <TextBlock Text="{Binding ConnectingDoorwayText}"
+                                       FontSize="12" Foreground="#9aba88" HorizontalAlignment="Center"
+                                       IsVisible="{Binding ConnectingDoorwayText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <TextBlock Text="{Binding PlacementGuideText}"
+                                       FontSize="12" Foreground="#c8b878" HorizontalAlignment="Center" />
+                            <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                                <Button Classes="ghost" Content="Rotate 90°" Command="{Binding TwistPendingCommand}" FontSize="11" Padding="8,3"
+                                        ToolTip.Tip="Turn the piece (Q / E)" />
+                                <Button Classes="ghost" Content="Next fit (R)" Command="{Binding CycleAttachDoorCommand}" FontSize="11" Padding="8,3" />
+                                <Button Classes="primary" Content="Place (Enter)" Command="{Binding ConfirmPlacementCommand}" FontSize="11" Padding="8,3" />
+                                <Button Classes="ghost" Content="Cancel" Command="{Binding CancelPlacementCommand}" FontSize="11" Padding="8,3" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border VerticalAlignment="Top" HorizontalAlignment="Center"
+                            Margin="0,48,0,0" Padding="16,8" CornerRadius="6"
+                            Background="#DD301010" BorderBrush="#e08060" BorderThickness="1"
+                            IsVisible="{Binding ShowBlockedPlacementBanner}">
+                        <StackPanel Spacing="4" HorizontalAlignment="Center">
+                            <TextBlock Text="{Binding PlacementStatusText}" FontSize="15" FontWeight="SemiBold"
+                                       Foreground="#f0d060" HorizontalAlignment="Center" />
+                            <TextBlock Text="{Binding PlacementBlockReason}"
+                                       FontSize="12" Foreground="#e08060" HorizontalAlignment="Center"
+                                       TextWrapping="Wrap" MaxWidth="480" />
+                            <TextBlock Text="{Binding ConnectingDoorwayText}"
+                                       FontSize="12" Foreground="#c8b878" HorizontalAlignment="Center"
+                                       IsVisible="{Binding ConnectingDoorwayText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                            <StackPanel Orientation="Horizontal" Spacing="6" HorizontalAlignment="Center">
+                                <Button Classes="ghost" Content="Rotate 90°" Command="{Binding TwistPendingCommand}" FontSize="11" Padding="8,3" />
+                                <Button Classes="ghost" Content="Next fit (R)" Command="{Binding CycleAttachDoorCommand}" FontSize="11" Padding="8,3" />
+                                <Button Classes="ghost" Content="Cancel" Command="{Binding CancelPlacementCommand}" FontSize="11" Padding="8,3" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <Border VerticalAlignment="Top" HorizontalAlignment="Center"
+                            Margin="0,48,0,0" Padding="16,8" CornerRadius="6"
+                            Background="#DD1a2030" BorderBrush="#6ec07a" BorderThickness="1"
+                            IsVisible="{Binding ShowPlayerPreviewBanner}" IsHitTestVisible="False">
+                        <StackPanel Spacing="2" HorizontalAlignment="Center">
+                            <TextBlock Text="Walking as a player" FontSize="15" FontWeight="SemiBold"
+                                       Foreground="#c8e8a0" HorizontalAlignment="Center" />
+                            <TextBlock Text="WASD to walk · hold right mouse to look · Shift to run · Esc to stop"
+                                       FontSize="12" Foreground="#9aba88" HorizontalAlignment="Center" />
+                            <TextBlock Text="Place rooms and objects from this view to check scale and fit"
+                                       FontSize="12" Foreground="#c8b878" HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border VerticalAlignment="Top" HorizontalAlignment="Center"
+                            Margin="0,48,0,0" Padding="16,8" CornerRadius="6"
+                            Background="#DD0a3040" BorderBrush="#4dbdbd" BorderThickness="1"
+                            IsVisible="{Binding IsObjectPlacementMode}" IsHitTestVisible="False">
+                        <StackPanel Spacing="2" HorizontalAlignment="Center">
+                            <TextBlock Text="Placing object" FontSize="14" FontWeight="SemiBold"
+                                       Foreground="#4dbdbd" HorizontalAlignment="Center" />
+                            <TextBlock Text="Click a surface to place  |  Escape to cancel"
+                                       FontSize="11" Foreground="#6a8a8a" HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Background="#CC0a0614" IsVisible="{Binding !HasDungeon}" IsHitTestVisible="True">
+                        <Border Classes="acme-card" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420">
+                            <StackPanel Spacing="12">
+                                <TextBlock Text="No dungeon open"
+                                           FontSize="20"
+                                           FontWeight="SemiBold"
+                                           Foreground="#d8d0ec"
+                                           HorizontalAlignment="Center" />
+                                <TextBlock Classes="muted"
+                                           Text="Start empty to place rooms by hand, open a retail landblock, or generate one from proven connections."
+                                           TextAlignment="Center" />
+                                <Button Classes="primary"
+                                        Content="New empty dungeon"
+                                        Command="{Binding NewDungeonCommand}"
+                                        HorizontalAlignment="Stretch"
+                                        HorizontalContentAlignment="Center" />
+                                <StackPanel Orientation="Horizontal" Spacing="8" HorizontalAlignment="Center">
+                                    <Button Classes="ghost" Content="Open" Command="{Binding OpenLandblockCommand}" />
+                                    <Button Classes="ghost" Content="Generate" Command="{Binding GenerateDungeonCommand}" />
+                                </StackPanel>
+                                <TextBlock Classes="hint"
+                                           Text="Need a copy of a retail dungeon? Use Build → Start from template."
+                                           TextAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+                    </Border>
+
+                    <Border Background="#990a0614" IsVisible="{Binding NeedsFirstRoom}" IsHitTestVisible="False">
+                        <Border Classes="acme-card" HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="400">
+                            <StackPanel Spacing="8">
+                                <TextBlock Text="Start with a hallway"
+                                           FontSize="18"
+                                           FontWeight="SemiBold"
+                                           Foreground="#d8d0ec"
+                                           HorizontalAlignment="Center" />
+                                <TextBlock Classes="muted"
+                                           Text="Click a hallway on the left. It appears here. Then click a doorway so it turns yellow, hover a room to preview, and click to place."
+                                           TextAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+                    </Border>
+
+                    <Border VerticalAlignment="Bottom"
+                            Background="#DD140a20"
+                            BorderBrush="#2a1d42"
+                            BorderThickness="0,1,0,0"
+                            Padding="10,4"
+                            IsHitTestVisible="False">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Left" FontSize="11" Foreground="#8a7a9e" VerticalAlignment="Center" Text="Dungeon" />
+                            <TextBlock DockPanel.Dock="Right" HorizontalAlignment="Right" FontSize="11" Foreground="#5a4a6e" VerticalAlignment="Center">
+                                <TextBlock.Text>
+                                    <MultiBinding StringFormat="{}{0} rooms">
+                                        <Binding Path="CellCount" />
+                                    </MultiBinding>
+                                </TextBlock.Text>
+                            </TextBlock>
+                            <TextBlock DockPanel.Dock="Left" FontFamily="Consolas, Courier New"
+                                       FontSize="11" Foreground="#4dbdbd" VerticalAlignment="Center" Margin="16,0,0,0"
+                                       IsVisible="{Binding ShowCursorHud}" Text="{Binding CursorHudText}" />
+                            <TextBlock FontSize="11" Foreground="#6a5a7e" VerticalAlignment="Center" Margin="20,0,0,0"
+                                       IsVisible="{Binding ShowHoveredCellInfo}" Text="{Binding HoveredCellInfo}" />
+                            <TextBlock FontSize="11" Foreground="#7c4dbd" VerticalAlignment="Center" Margin="20,0,0,0"
+                                       IsVisible="{Binding HasSelectedCell}" Text="{Binding SelectedCellInfo}" />
+                        </DockPanel>
+                    </Border>
+                </Grid>
+
+                <GridSplitter Grid.Column="3"
+                              Width="4"
+                              HorizontalAlignment="Center"
+                              VerticalAlignment="Stretch" />
+
+                <Border Grid.Column="4"
+                        Background="#140a20"
+                        BorderBrush="#2a1d42"
+                        BorderThickness="1,0,0,0"
+                        IsVisible="{Binding DockingManager.RightPanels.Count}">
+                    <docking:DockRegionView Panels="{Binding DockingManager.RightPanels}"
+                                            IsTabbed="{Binding DockingManager.IsRightTabbed}"
+                                            IsSectioned="{Binding DockingManager.IsRightSectioned}"
+                                            ToggleModeCommand="{Binding DockingManager.ToggleRightModeCommand}"
+                                            StackSectionsVertically="True" />
+                </Border>
+            </Grid>
+
+            <GridSplitter Grid.Row="3"
+                          Height="4"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Center"
+                          IsVisible="{Binding DockingManager.BottomPanels.Count}" />
+
+            <Border Grid.Row="4"
+                    Background="#140a20"
+                    BorderBrush="#2a1d42"
+                    BorderThickness="0,1,0,0"
+                    MaxHeight="300"
+                    IsVisible="{Binding DockingManager.BottomPanels.Count}">
+                <docking:DockRegionView Panels="{Binding DockingManager.BottomPanels}"
+                                        IsTabbed="{Binding DockingManager.IsBottomTabbed}"
+                                        IsSectioned="{Binding DockingManager.IsBottomSectioned}"
+                                        ToggleModeCommand="{Binding DockingManager.ToggleBottomModeCommand}"
+                                        StackSectionsVertically="False" />
+            </Border>
+
+            <Border Name="LeftGhost" Grid.RowSpan="5" HorizontalAlignment="Left" Width="200"
+                    Background="#447c4dbd" IsVisible="False" IsHitTestVisible="False" />
+            <Border Name="RightGhost" Grid.RowSpan="5" HorizontalAlignment="Right" Width="200"
+                    Background="#447c4dbd" IsVisible="False" IsHitTestVisible="False" />
+            <Border Name="TopGhost" Grid.Row="1" VerticalAlignment="Top" Height="100"
+                    Background="#447c4dbd" IsVisible="False" IsHitTestVisible="False" />
+            <Border Name="BottomGhost" Grid.Row="4" VerticalAlignment="Bottom" Height="100"
+                    Background="#447c4dbd" IsVisible="False" IsHitTestVisible="False" />
+        </Grid>
+    </dh:DialogHost>
+</UserControl>

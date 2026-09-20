@@ -1,0 +1,502 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:WorldBuilder.Editors.Landscape.ViewModels"
+             xmlns:vp="using:WorldBuilder.Views.Components.Viewports"
+             xmlns:docking="clr-namespace:WorldBuilder.Lib.Docking;assembly=WorldBuilder"
+             xmlns:converters="clr-namespace:WorldBuilder.Lib.Converters;assembly=WorldBuilder"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+             x:Class="WorldBuilder.Editors.Landscape.Views.LandscapeEditorView"
+             x:DataType="vm:LandscapeEditorViewModel"
+             DragDrop.AllowDrop="True">
+
+    <UserControl.Resources>
+        <converters:OrientationToColumnsConverter x:Key="OrientationToColumns" />
+        <converters:OrientationToRowsConverter x:Key="OrientationToRows" />
+    </UserControl.Resources>
+
+    <UserControl.Styles>
+        <!-- Viewport overlay toolbar toggle buttons -->
+        <Style Selector="ToggleButton.vp-toggle">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Foreground" Value="#8a7a9e" />
+        </Style>
+        <Style Selector="ToggleButton.vp-toggle:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#33ffffff" />
+            <Setter Property="Foreground" Value="#c0b0d8" />
+        </Style>
+        <Style Selector="ToggleButton.vp-toggle:checked /template/ ContentPresenter">
+            <Setter Property="Background" Value="#7c4dbd" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="ToggleButton.vp-toggle:checked:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#9b6dd0" />
+        </Style>
+        <!-- Viewport overlay action buttons -->
+        <Style Selector="Button.vp-action">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Foreground" Value="#8a7a9e" />
+        </Style>
+        <Style Selector="Button.vp-action:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#33ffffff" />
+            <Setter Property="Foreground" Value="#c0b0d8" />
+        </Style>
+
+        <!-- Tab content panel control strip buttons -->
+        <Style Selector="Button.tab-panel-btn">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="4,2" />
+            <Setter Property="MinWidth" Value="22" />
+            <Setter Property="MinHeight" Value="20" />
+            <Setter Property="CornerRadius" Value="3" />
+            <Setter Property="Foreground" Value="#6a5a7e" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+        </Style>
+        <Style Selector="Button.tab-panel-btn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#2a1545" />
+            <Setter Property="Foreground" Value="#c0b0d8" />
+        </Style>
+        <Style Selector="Button.tab-panel-btn:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="#351a55" />
+        </Style>
+        <Style Selector="Button.tab-panel-btn-close:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#5c2020" />
+            <Setter Property="Foreground" Value="#ff8888" />
+        </Style>
+
+        <!-- Dock region tab control styling -->
+        <Style Selector="TabControl.dock-tabs">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+        <Style Selector="TabControl.dock-tabs > TabItem">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#6a5a7e" />
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="TabControl.dock-tabs > TabItem:pointerover">
+            <Setter Property="Foreground" Value="#c0b0d8" />
+            <Setter Property="Background" Value="#1e1035" />
+        </Style>
+        <Style Selector="TabControl.dock-tabs > TabItem:selected">
+            <Setter Property="Foreground" Value="#d4a843" />
+            <Setter Property="Background" Value="#1e1035" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid x:Name="RootGrid">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" MinHeight="0" />
+        </Grid.RowDefinitions>
+
+        <Border Grid.Row="0"
+                Background="#140a20"
+                BorderBrush="#2a1d42"
+                BorderThickness="0,0,0,1"
+                Padding="10,8">
+            <StackPanel Spacing="6">
+                <StackPanel Orientation="Vertical" Spacing="6">
+                    <WrapPanel Orientation="Horizontal">
+                        <TextBlock Text="Tools"
+                                   FontWeight="Bold"
+                                   FontSize="12"
+                                   Foreground="#d4a843"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,4,0" />
+                        <ItemsControl ItemsSource="{Binding Tools}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel Orientation="Horizontal" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Classes="tool-btn"
+                                            Classes.selected="{Binding IsSelected}"
+                                            Command="{Binding $parent[UserControl].((vm:LandscapeEditorViewModel)DataContext).SelectToolCommand}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip.Tip="{Binding Description}">
+                                        <StackPanel Orientation="Horizontal" Spacing="6">
+                                            <TextBlock FontSize="14" Text="{Binding IconGlyph}" />
+                                            <TextBlock FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center" Text="{Binding Name}" />
+                                        </StackPanel>
+                                    </Button>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </WrapPanel>
+                    <ItemsControl ItemsSource="{Binding SelectedTool.AllSubTools}"
+                                  IsVisible="{Binding SelectedTool, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Classes="subtool-btn"
+                                        Classes.selected="{Binding IsSelected}"
+                                        Command="{Binding $parent[UserControl].((vm:LandscapeEditorViewModel)DataContext).SelectSubToolCommand}"
+                                        CommandParameter="{Binding}"
+                                        ToolTip.Tip="{Binding Name}">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <TextBlock FontSize="13" Text="{Binding IconGlyph}" />
+                                        <TextBlock FontSize="11" VerticalAlignment="Center" Text="{Binding Name}" />
+                                    </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+                <WrapPanel>
+                <Button Classes="ghost" Content="Undo" Command="{Binding UndoCommand}" ToolTip.Tip="Undo the last edit (Ctrl+Z)" />
+                <Button Classes="ghost" Content="Redo" Command="{Binding RedoCommand}" ToolTip.Tip="Redo an undone edit (Ctrl+Y)" />
+                <Button Classes="primary" Content="{Binding SaveButtonText}" Command="{Binding SaveLandscapeCommand}"
+                        ToolTip.Tip="Save terrain edits to the project" />
+                <Button Classes="ghost" Content="Reset view" Command="{Binding ResetCameraCommand}" ToolTip.Tip="Return the camera to a useful view" />
+                <CheckBox Margin="8,0" IsChecked="{Binding SnapToGrid}" Content="Snap objects to grid" ToolTip.Tip="Snap object placement and movement to the grid." />
+                <Button Classes="ghost" Content="Quick guide">
+                <Button.Flyout>
+                <Flyout>
+                <StackPanel Width="340" Spacing="10">
+                <TextBlock Text="Terrain workflow" FontSize="17" FontWeight="SemiBold" />
+                <StackPanel Spacing="3">
+                <TextBlock Text="1. Find a place" FontWeight="SemiBold" />
+                <TextBlock Text="Use the world map to choose where to work." TextWrapping="Wrap" />
+                </StackPanel>
+                <StackPanel Spacing="3">
+                <TextBlock Text="2. Choose what to change" FontWeight="SemiBold" />
+                <TextBlock Text="Height shapes the ground. Terrain paints textures. Road draws paths. Select edits objects." TextWrapping="Wrap" />
+                </StackPanel>
+                <StackPanel Spacing="3">
+                <TextBlock Text="3. Adjust, then try a small edit" FontWeight="SemiBold" />
+                <TextBlock Text="Choose an operation below the tools, then adjust its settings in the tool panel. Use Undo to compare." TextWrapping="Wrap" />
+                </StackPanel>
+                </StackPanel>
+                </Flyout>
+                </Button.Flyout>
+                </Button>
+                </WrapPanel>
+                <Border Classes="coach">
+                <Grid ColumnDefinitions="Auto,*">
+                <TextBlock Text="NEXT" Foreground="#d4a843" FontWeight="SemiBold" Margin="0,0,10,0" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding CurrentToolHint}" TextWrapping="Wrap" Foreground="#d8d0ec" />
+                </Grid>
+                </Border>
+                </StackPanel>
+        </Border>
+
+        <!-- Top Panels -->
+        <Border Grid.Row="1"
+                Background="#140a20"
+                BorderBrush="#2a1d42"
+                BorderThickness="0,0,0,1"
+                IsVisible="{Binding DockingManager.TopPanels.Count}"
+                MaxHeight="300">
+            <docking:DockRegionView Panels="{Binding DockingManager.TopPanels}"
+                                    IsTabbed="{Binding DockingManager.IsTopTabbed}"
+                                    IsSectioned="{Binding DockingManager.IsTopSectioned}"
+                                    ToggleModeCommand="{Binding DockingManager.ToggleTopModeCommand}"
+                                    StackSectionsVertically="False" />
+        </Border>
+
+        <Grid x:Name="MainGrid" Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="280" MinWidth="200" MaxWidth="500" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="280" MinWidth="200" MaxWidth="500" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Left Panels -->
+            <Border Grid.Column="0"
+                    Background="#140a20"
+                    BorderBrush="#2a1d42"
+                    BorderThickness="0,0,1,0"
+                    IsVisible="{Binding DockingManager.LeftPanels.Count}">
+                <docking:DockRegionView Panels="{Binding DockingManager.LeftPanels}"
+                                        IsTabbed="{Binding DockingManager.IsLeftTabbed}"
+                                        IsSectioned="{Binding DockingManager.IsLeftSectioned}"
+                                        ToggleModeCommand="{Binding DockingManager.ToggleLeftModeCommand}"
+                                        StackSectionsVertically="True" />
+            </Border>
+
+            <!-- Left Splitter -->
+            <GridSplitter Grid.Column="1"
+                          Width="4"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Stretch" />
+
+            <!-- Main Viewport Area -->
+            <Grid Grid.Column="2" Background="#080010">
+                <!-- Center Panels -->
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <!-- Toggle Orientation Button -->
+                    <Button Grid.Row="0"
+                            HorizontalAlignment="Right"
+                            Margin="4"
+                            ZIndex="10"
+                            Classes="vp-action"
+                            Command="{Binding DockingManager.ToggleCenterOrientationCommand}"
+                            IsVisible="{Binding DockingManager.CenterPanels.Count, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <TextBlock Text="&#x21BA;" ToolTip.Tip="Rotate Layout" />
+                    </Button>
+
+                    <ContentControl Grid.Row="1" Content="{Binding DockingManager.CenterPanels}">
+                        <ContentControl.ContentTemplate>
+                            <DataTemplate>
+                                <ItemsControl ItemsSource="{Binding}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid
+                                                Columns="{Binding $parent[UserControl].((vm:LandscapeEditorViewModel)DataContext).DockingManager.CenterOrientation, Converter={StaticResource OrientationToColumns}}"
+                                                Rows="{Binding $parent[UserControl].((vm:LandscapeEditorViewModel)DataContext).DockingManager.CenterOrientation, Converter={StaticResource OrientationToRows}}" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="docking:DockablePanelViewModel">
+                                            <docking:DockablePanelView />
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </DataTemplate>
+                        </ContentControl.ContentTemplate>
+                    </ContentControl>
+                </Grid>
+
+                <!-- Overlay toggle toolbar -->
+                <Border
+                    Margin="0,8,0,0"
+                    Padding="3,2"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Top"
+                    Background="#DD120c22"
+                    BorderBrush="#442a1d42"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    BoxShadow="0 2 8 0 #40000000">
+                    <StackPanel Orientation="Horizontal" Spacing="1">
+                        <ToggleButton
+                            Classes="vp-toggle"
+                            IsChecked="{Binding ShowGrid}"
+                            ToolTip.Tip="Toggle Grid">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Text="&#x2637;" FontSize="13" />
+                                <TextBlock Text="Grid" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton
+                            Classes="vp-toggle"
+                            IsChecked="{Binding ShowStaticObjects}"
+                            ToolTip.Tip="Toggle Static Objects">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Text="&#x1F3E0;" FontSize="13" />
+                                <TextBlock Text="Objects" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton
+                            Classes="vp-toggle"
+                            IsChecked="{Binding ShowScenery}"
+                            ToolTip.Tip="Toggle Scenery">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Text="&#x1F332;" FontSize="13" />
+                                <TextBlock Text="Scenery" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton
+                            Classes="vp-toggle"
+                            IsChecked="{Binding ShowParticles}"
+                            ToolTip.Tip="Toggle particle effects from placed emitters">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Text="&#x2728;" FontSize="13" />
+                                <TextBlock Text="Particles" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton
+                            Classes="vp-toggle"
+                            IsChecked="{Binding ShowDungeons}"
+                            ToolTip.Tip="Toggle Dungeon Geometry">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Text="&#x1F573;" FontSize="13" />
+                                <TextBlock Text="Dungeons" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton
+                            Classes="vp-toggle"
+                            IsChecked="{Binding ShowBuildingInteriors}"
+                            ToolTip.Tip="Always show building interior geometry (even when camera is outside)">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Text="&#x1F3DB;" FontSize="13" />
+                                <TextBlock Text="Interiors" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton
+                            Classes="vp-toggle"
+                            IsChecked="{Binding ShowWeenieSpawns}"
+                            ToolTip.Tip="Show weenie spawns from the world database (creatures, NPCs, generators)">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Text="&#x1F47E;" FontSize="13" />
+                                <TextBlock Text="Spawns" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <ToggleButton
+                            Classes="vp-toggle"
+                            IsChecked="{Binding ShowSlopeHighlight}"
+                            ToolTip.Tip="Highlight Unwalkable Slopes">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Text="&#x26A0;" FontSize="13" />
+                                <TextBlock Text="Slopes" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </ToggleButton>
+                        <Border Width="1" Background="#3d2a5c" Margin="4,4" />
+                        <Button
+                            Classes="vp-action"
+                            Command="{Binding ResetCameraCommand}"
+                            ToolTip.Tip="Reset Camera to Map Center">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Text="&#x1F3AF;" FontSize="13" />
+                                <TextBlock Text="Reset" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                        <Border Width="1" Background="#3d2a5c" Margin="4,4" />
+                        <Button
+                            Classes="vp-action"
+                            Command="{Binding GenerateWorldCommand}"
+                            ToolTip.Tip="Procedurally generate terrain with biomes, towns, and roads">
+                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                <TextBlock Text="&#x1F30D;" FontSize="13" />
+                                <TextBlock Text="Generate..." VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Border>
+
+                <!-- Performance Overlay -->
+                <Border
+                    Margin="8"
+                    Padding="10,6"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Bottom"
+                    Background="#DD120c22"
+                    BorderBrush="#442a1d42"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    IsHitTestVisible="False"
+                    IsVisible="{Binding ShowPerformanceOverlay}">
+                    <TextBlock
+                        FontFamily="Consolas, Courier New"
+                        FontSize="11"
+                        Foreground="#66dd88"
+                        Text="{Binding PerformanceText}" />
+                </Border>
+
+                <!-- Position HUD -->
+                <Border
+                    Margin="8"
+                    Padding="8,4"
+                    HorizontalAlignment="Left"
+                    VerticalAlignment="Bottom"
+                    Background="#CC120c22"
+                    BorderBrush="#442a1d42"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    IsHitTestVisible="False">
+                    <StackPanel Spacing="2">
+                        <TextBlock
+                            FontFamily="Consolas, Courier New"
+                            FontSize="12"
+                            Foreground="#d4a843"
+                            Text="{Binding CurrentPositionText}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Placement mode overlay -->
+                <Border VerticalAlignment="Top" HorizontalAlignment="Center"
+                        Margin="0,48,0,0" Padding="16,8" CornerRadius="6"
+                        Background="#DD0a3040" BorderBrush="#4dbdbd" BorderThickness="1"
+                        IsVisible="{Binding IsInPlacementMode}" IsHitTestVisible="False">
+                    <StackPanel Spacing="2" HorizontalAlignment="Center">
+                        <TextBlock Text="{Binding PlacementStatusText}" FontSize="14" FontWeight="SemiBold"
+                                   Foreground="#4dbdbd" HorizontalAlignment="Center" />
+                        <TextBlock Text="Click terrain to place  |  Escape to cancel"
+                                   FontSize="11" Foreground="#6a8a8a" HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- Right Splitter -->
+            <GridSplitter Grid.Column="3"
+                          Width="4"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Stretch" />
+
+            <!-- Right Panels -->
+            <Border Grid.Column="4"
+                    Background="#140a20"
+                    BorderBrush="#2a1d42"
+                    BorderThickness="1,0,0,0"
+                    IsVisible="{Binding DockingManager.RightPanels.Count}">
+                <docking:DockRegionView Panels="{Binding DockingManager.RightPanels}"
+                                        IsTabbed="{Binding DockingManager.IsRightTabbed}"
+                                        IsSectioned="{Binding DockingManager.IsRightSectioned}"
+                                        ToggleModeCommand="{Binding DockingManager.ToggleRightModeCommand}"
+                                        StackSectionsVertically="True" />
+            </Border>
+        </Grid>
+
+        <!-- Bottom Splitter -->
+        <GridSplitter Grid.Row="3"
+                      Height="4"
+                      HorizontalAlignment="Stretch"
+                      VerticalAlignment="Center"
+                      IsVisible="{Binding DockingManager.BottomPanels.Count}" />
+
+        <!-- Bottom Panels -->
+        <Border Grid.Row="4"
+                Background="#140a20"
+                MinHeight="100"
+                MaxHeight="500"
+                IsVisible="{Binding DockingManager.BottomPanels.Count}">
+            <docking:DockRegionView Panels="{Binding DockingManager.BottomPanels}"
+                                    IsTabbed="{Binding DockingManager.IsBottomTabbed}"
+                                    IsSectioned="{Binding DockingManager.IsBottomSectioned}"
+                                    ToggleModeCommand="{Binding DockingManager.ToggleBottomModeCommand}"
+                                    StackSectionsVertically="False" />
+        </Border>
+
+        <!-- Drop Ghosts (purple-tinted to match theme) -->
+        <Border Name="LeftGhost" Grid.RowSpan="5" HorizontalAlignment="Left" Width="200" Background="#447c4dbd" IsVisible="False" IsHitTestVisible="False" />
+        <Border Name="RightGhost" Grid.RowSpan="5" HorizontalAlignment="Right" Width="200" Background="#447c4dbd" IsVisible="False" IsHitTestVisible="False" />
+        <Border Name="TopGhost" Grid.Row="1" VerticalAlignment="Top" Height="100" Background="#447c4dbd" IsVisible="False" IsHitTestVisible="False" />
+        <Border Name="BottomGhost" Grid.Row="4" VerticalAlignment="Bottom" Height="100" Background="#447c4dbd" IsVisible="False" IsHitTestVisible="False" />
+    </Grid>
+</UserControl>

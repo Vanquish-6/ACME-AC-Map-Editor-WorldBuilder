@@ -1,0 +1,20 @@
+using Acme.Render;
+using System.Numerics;
+using WorldBuilder.Editors.Landscape;
+
+namespace WorldBuilder.Lib {
+    public struct MouseState {
+        public Vector2 Position;
+        public bool LeftPressed;
+        public bool RightPressed;
+        public bool MiddlePressed;
+        public bool ShiftPressed;
+        public bool CtrlPressed;
+        public bool AltPressed;
+        public Vector2 Delta;
+        public bool IsOverTerrain;
+        public TerrainRaycast.TerrainRaycastHit? TerrainHit;
+        public ObjectRaycast.ObjectRaycastHit? ObjectHit;
+        public EnvCellManager.EnvCellRaycastHit? EnvCellHit;
+    }
+}

@@ -1,0 +1,90 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using Acme.Render.Enums;
+using Acme.Render.Vertex;
+using Silk.NET.OpenGL;
+using SixLabors.ImageSharp.Memory;
+using VertexAttribType = Silk.NET.OpenGL.VertexAttribType;
+
+namespace Acme.Render.GL {
+    using GL = Silk.NET.OpenGL.GL;
+    public unsafe class ManagedGLVertexArray : IVertexArray {
+        private readonly OpenGLGraphicsDevice _device;
+        private GL GL => _device.GL;
+        private uint _vaoId = 0;
+
+        public ManagedGLVertexArray(OpenGLGraphicsDevice device, IVertexBuffer buffer, VertexFormat format) {
+            _device = device;
+
+            // Generate the vertex array
+            _vaoId = GL.GenVertexArray();
+            GLHelpers.CheckErrors();
+
+            if (_vaoId == 0) {
+                throw new Exception("Failed to generate vertex array.");
+            }
+
+            SetVertexBuffer(buffer, format);
+        }
+
+        public void SetVertexBuffer(IVertexBuffer buffer, VertexFormat format) {
+            GL.BindVertexArray(_vaoId);
+            GLHelpers.CheckErrors();
+            buffer.Bind();
+            for (int i = 0; i < format.Attributes.Length; i++) {
+                var attr = format.Attributes[i];
+                GL.EnableVertexAttribArray((uint)i);
+                GLHelpers.CheckErrors();
+
+                // For integer types that aren't normalized, use VertexAttribIPointer
+                // This is required for GLES when shader expects uvec4/ivec4/uint/int
+                if (!attr.Normalized && IsIntegerType(attr.Type)) {
+                    GL.VertexAttribIPointer((uint)i, attr.Size, Convert(attr.Type), (uint)format.Stride, attr.Offset);
+                }
+                else {
+                    GL.VertexAttribPointer((uint)i, attr.Size, Convert(attr.Type), attr.Normalized, (uint)format.Stride,
+                        attr.Offset);
+                }
+
+                GLHelpers.CheckErrors();
+            }
+
+            GL.BindVertexArray(0);
+            GLHelpers.CheckErrors();
+        }
+
+        private bool IsIntegerType(Acme.Render.Enums.VertexAttribType type) {
+            return type == Acme.Render.Enums.VertexAttribType.Int ||
+                   type == Acme.Render.Enums.VertexAttribType.UnsignedInt ||
+                   type == Acme.Render.Enums.VertexAttribType.Byte ||
+                   type == Acme.Render.Enums.VertexAttribType.UnsignedByte;
+        }
+
+        private GLEnum Convert(Acme.Render.Enums.VertexAttribType type) => type switch {
+            Acme.Render.Enums.VertexAttribType.Float => GLEnum.Float,
+            Acme.Render.Enums.VertexAttribType.Int => GLEnum.Int,
+            Acme.Render.Enums.VertexAttribType.UnsignedInt => GLEnum.UnsignedInt,
+            Acme.Render.Enums.VertexAttribType.UnsignedByte => GLEnum.UnsignedByte,
+            Acme.Render.Enums.VertexAttribType.Byte => GLEnum.Byte,
+            _ => throw new NotSupportedException()
+        };
+
+        public void Bind() {
+            GL.BindVertexArray(_vaoId);
+            GLHelpers.CheckErrors();
+        }
+
+        public void Unbind() {
+            GL.BindVertexArray(0);
+            GLHelpers.CheckErrors();
+        }
+
+        public void Dispose() {
+            GL.DeleteVertexArray(_vaoId);
+            GLHelpers.CheckErrors();
+        }
+    }
+}

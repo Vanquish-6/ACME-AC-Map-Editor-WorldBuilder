@@ -1,0 +1,304 @@
+<UserControl
+    x:Class="WorldBuilder.Views.MainView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:editors="clr-namespace:WorldBuilder.Editors.Landscape.Views"
+    xmlns:dungeonEditors="clr-namespace:WorldBuilder.Editors.Dungeon.Views"
+    xmlns:spellEditors="clr-namespace:WorldBuilder.Editors.Spell.Views"
+    xmlns:skillEditors="clr-namespace:WorldBuilder.Editors.Skill.Views"
+    xmlns:spellSetEditors="clr-namespace:WorldBuilder.Editors.SpellSet.Views"
+    xmlns:experienceEditors="clr-namespace:WorldBuilder.Editors.Experience.Views"
+    xmlns:vitalEditors="clr-namespace:WorldBuilder.Editors.Vital.Views"
+    xmlns:charGenEditors="clr-namespace:WorldBuilder.Editors.CharGen.Views"
+    xmlns:landscapeVm="clr-namespace:WorldBuilder.Editors.Landscape.ViewModels"
+    xmlns:dungeonVm="clr-namespace:WorldBuilder.Editors.Dungeon"
+    xmlns:spellVm="clr-namespace:WorldBuilder.Editors.Spell"
+    xmlns:skillVm="clr-namespace:WorldBuilder.Editors.Skill"
+    xmlns:spellSetVm="clr-namespace:WorldBuilder.Editors.SpellSet"
+    xmlns:experienceVm="clr-namespace:WorldBuilder.Editors.Experience"
+    xmlns:vitalVm="clr-namespace:WorldBuilder.Editors.Vital"
+    xmlns:charGenVm="clr-namespace:WorldBuilder.Editors.CharGen"
+    xmlns:layoutEditors="clr-namespace:WorldBuilder.Editors.Layout.Views"
+    xmlns:layoutVm="clr-namespace:WorldBuilder.Editors.Layout"
+    xmlns:objectDebugVm="clr-namespace:WorldBuilder.Editors.ObjectDebug;assembly=WorldBuilder"
+    xmlns:objectDebugEditors="clr-namespace:WorldBuilder.Editors.ObjectDebug.Views;assembly=WorldBuilder"
+    xmlns:weenieVm="clr-namespace:WorldBuilder.Editors.Weenie;assembly=WorldBuilder"
+    xmlns:weenieEditors="clr-namespace:WorldBuilder.Editors.Weenie.Views;assembly=WorldBuilder"
+    xmlns:monsterVm="clr-namespace:WorldBuilder.Editors.Monster;assembly=WorldBuilder"
+    xmlns:monsterEditors="clr-namespace:WorldBuilder.Editors.Monster.Views;assembly=WorldBuilder"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="clr-namespace:WorldBuilder.ViewModels"
+    xmlns:docking="clr-namespace:WorldBuilder.Lib.Docking;assembly=WorldBuilder"
+    xmlns:sharedViews="clr-namespace:WorldBuilder.Views"
+    d:DesignHeight="450"
+    d:DesignWidth="800"
+    x:CompileBindings="True"
+    x:DataType="vm:MainViewModel"
+    mc:Ignorable="d">
+    <Design.DataContext>
+        <!--
+            This only sets the DataContext for the previewer in an IDE,
+            to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs)
+        -->
+        <vm:MainViewModel />
+    </Design.DataContext>
+
+    <DockPanel>
+        <!--  Menu Bar  -->
+        <Border DockPanel.Dock="Top"
+                Background="#120c22"
+                BorderBrush="#2a1d42"
+                BorderThickness="0,0,0,1"
+                Padding="2,0">
+            <Menu>
+                <MenuItem Header="_File">
+                    <MenuItem Command="{Binding OpenExportDatsWindowCommand}" Header="Export Dats..." IsEnabled="{Binding CanExportDats}" />
+                    <MenuItem
+                        Command="{Binding ConvertLegacyDatsToRetailCommand}"
+                        Header="Convert Legacy DATs To Retail..."
+                        IsVisible="{Binding IsReadOnlyDatProject}" />
+                    <MenuItem
+                        Command="{Binding RepairExportedClientDatsCommand}"
+                        Header="Repair Exported Client DATs..." />
+                    <MenuItem Command="{Binding AnalyzeDungeonRoomsCommand}" Header="Analyze Dungeon Rooms..." />
+                    <Separator />
+                    <MenuItem Command="{Binding OpenSettingsWindowCommand}" Header="Settings..." />
+                    <MenuItem Command="{Binding OpenLogFolderCommand}" Header="Open Log Folder" />
+                    <Separator />
+                    <MenuItem Command="{Binding ExitCommand}" Header="Exit" InputGesture="{Binding ExitGesture}" />
+                </MenuItem>
+                <MenuItem Header="_Edit">
+                    <MenuItem Command="{Binding UndoCommand}" Header="Undo" InputGesture="{Binding UndoGesture}" />
+                    <MenuItem Command="{Binding RedoCommand}" Header="Redo" InputGesture="{Binding RedoGesture}" />
+                    <Separator />
+                    <MenuItem Command="{Binding CopyCommand}" Header="Copy" InputGesture="{Binding CopyGesture}" />
+                    <MenuItem Command="{Binding PasteCommand}" Header="Paste" InputGesture="{Binding PasteGesture}" />
+                    <MenuItem Command="{Binding DuplicateCommand}" Header="Duplicate" InputGesture="{Binding DuplicateGesture}" />
+                    <MenuItem Command="{Binding DeleteCommand}" Header="Delete" InputGesture="{Binding DeleteGesture}" />
+                    <Separator />
+                    <MenuItem Command="{Binding FocusSelectionCommand}" Header="Frame Selection" InputGesture="{Binding FocusSelectionGesture}" />
+                </MenuItem>
+                <MenuItem Header="_Navigate">
+                    <MenuItem
+                        Command="{Binding GotoLandblockCommand}"
+                        Header="Go to Landblock..."
+                        InputGesture="{Binding GotoLandblockGesture}" />
+                </MenuItem>
+                <MenuItem Header="_World"
+                           IsVisible="{Binding IsLandscapeEditorActive}">
+                    <MenuItem Command="{Binding LandscapeTogglePerformanceOverlayCommand}" Header="Performance Overlay" />
+                    <MenuItem Command="{Binding LandscapeClearCacheCommand}" Header="Clear Cache" />
+                    <MenuItem Command="{Binding LandscapeFreshStartCommand}" Header="Fresh Start" IsEnabled="{Binding CanPerformWholeWorldLandscapeMutation}" />
+                    <MenuItem Command="{Binding LandscapeImportHeightmapCommand}" Header="Import Heightmap..." IsEnabled="{Binding CanPerformWholeWorldLandscapeMutation}" />
+                </MenuItem>
+                <MenuItem Header="E_ditors">
+                    <MenuItem Command="{Binding SwitchToLandscapeEditorCommand}" Header="World Editor" />
+                    <MenuItem Command="{Binding SwitchToDungeonEditorCommand}" Header="Dungeon Editor" />
+                    <Separator />
+                    <MenuItem Command="{Binding SwitchToSpellEditorCommand}" Header="Spell Editor" />
+                    <MenuItem Command="{Binding SwitchToSpellSetEditorCommand}" Header="Spell Set Editor" />
+                    <MenuItem Command="{Binding SwitchToSkillEditorCommand}" Header="Skill Editor" />
+                    <MenuItem Command="{Binding SwitchToExperienceEditorCommand}" Header="Experience Table Editor" />
+                    <MenuItem Command="{Binding SwitchToVitalEditorCommand}" Header="Vital Table Editor" />
+                    <MenuItem Command="{Binding SwitchToCharGenEditorCommand}" Header="Character Creation" />
+                    <Separator />
+                    <MenuItem Command="{Binding SwitchToLayoutEditorCommand}" Header="UI Layout Viewer" />
+                    <MenuItem Command="{Binding SwitchToObjectDebugEditorCommand}" Header="Object Inspector" />
+                    <MenuItem Command="{Binding SwitchToWeenieEditorCommand}" Header="Weenie Editor" />
+                    <MenuItem Command="{Binding SwitchToMonsterEditorCommand}" Header="Monster Creator" />
+                </MenuItem>
+                <MenuItem Header="_Windows" ItemsSource="{Binding DockingPanels}">
+                    <MenuItem.Styles>
+                        <Style Selector="MenuItem > MenuItem" x:DataType="docking:IDockable">
+                            <Setter Property="Header" Value="{Binding Title}" />
+                            <Setter Property="Command" Value="{Binding $parent[Menu].((vm:MainViewModel)DataContext).TogglePanelVisibilityCommand}" />
+                            <Setter Property="CommandParameter" Value="{Binding Id}" />
+                            <Setter Property="Icon">
+                                <Template>
+                                    <CheckBox IsChecked="{Binding IsVisible}" IsHitTestVisible="False" />
+                                </Template>
+                            </Setter>
+                        </Style>
+                    </MenuItem.Styles>
+                </MenuItem>
+                <MenuItem Header="_Help">
+                    <MenuItem Command="{Binding OpenGettingStartedCommand}" Header="Getting Started..." />
+                    <MenuItem Command="{Binding OpenKeyboardShortcutsCommand}" Header="Keyboard Shortcuts..." />
+                </MenuItem>
+            </Menu>
+        </Border>
+
+        <Border DockPanel.Dock="Top"
+                Background="#140a20"
+                BorderBrush="#2a1d42"
+                BorderThickness="0,0,0,1"
+                Padding="8,6,8,8">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Disabled"
+                          HorizontalAlignment="Stretch"
+                          VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="18">
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="nav-group" Text="SCENE" />
+                        <ItemsControl ItemsSource="{Binding SceneEditors}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" Spacing="2" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:EditorNavItem">
+                                    <Button Classes="editor-tab"
+                                            Classes.selected="{Binding IsSelected}"
+                                            Content="{Binding Title}"
+                                            Command="{Binding SelectCommand}"
+                                            CommandParameter="{Binding Id}"
+                                            ToolTip.Tip="{Binding Description}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                    <Border Width="1" Background="#2a1d42" Margin="0,4" />
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="nav-group" Text="CONTENT" />
+                        <ItemsControl ItemsSource="{Binding ContentEditors}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" Spacing="2" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:EditorNavItem">
+                                    <Button Classes="editor-tab"
+                                            Classes.selected="{Binding IsSelected}"
+                                            Content="{Binding Title}"
+                                            Command="{Binding SelectCommand}"
+                                            CommandParameter="{Binding Id}"
+                                            ToolTip.Tip="{Binding Description}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                    <Border Width="1" Background="#2a1d42" Margin="0,4" />
+                    <StackPanel Spacing="4">
+                        <TextBlock Classes="nav-group" Text="INSPECT" />
+                        <ItemsControl ItemsSource="{Binding InspectEditors}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" Spacing="2" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="vm:EditorNavItem">
+                                    <Button Classes="editor-tab"
+                                            Classes.selected="{Binding IsSelected}"
+                                            Content="{Binding Title}"
+                                            Command="{Binding SelectCommand}"
+                                            CommandParameter="{Binding Id}"
+                                            ToolTip.Tip="{Binding Description}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <Border DockPanel.Dock="Top"
+                IsVisible="{Binding IsReadOnlyDatProject}"
+                Background="#23163a"
+                BorderBrush="#5d4888"
+                BorderThickness="0,0,0,1"
+                Padding="12,8">
+            <TextBlock
+                FontSize="12"
+                Foreground="#efe7ff"
+                Text="{Binding ProjectModeText}"
+                TextWrapping="Wrap" />
+        </Border>
+
+        <!--  Status Bar  -->
+        <Border DockPanel.Dock="Bottom"
+                Background="#120c22"
+                BorderBrush="#2a1d42"
+                BorderThickness="0,1,0,0"
+                Padding="10,5">
+            <DockPanel>
+                <Button DockPanel.Dock="Right"
+                        Classes="ghost"
+                        Content="Guide"
+                        Command="{Binding OpenGettingStartedCommand}"
+                        Margin="10,0,0,0"
+                        Padding="10,3"
+                        MinHeight="26"
+                        FontSize="11"
+                        ToolTip.Tip="How to start building in WorldBuilder" />
+                <TextBlock DockPanel.Dock="Right"
+                           HorizontalAlignment="Right"
+                           FontSize="11"
+                           Foreground="#a89bbe"
+                           VerticalAlignment="Center"
+                           Margin="12,0,0,0"
+                           Text="{Binding ActiveEditorTitle}" />
+                <TextBlock DockPanel.Dock="Left"
+                           FontSize="11"
+                           Foreground="#8a7a9e"
+                           VerticalAlignment="Center"
+                           Margin="0,0,16,0"
+                           Text="{Binding ProjectName, StringFormat='ACME · {0}'}" />
+                <TextBlock FontSize="11"
+                           Foreground="#b9abc9"
+                           VerticalAlignment="Center"
+                           TextWrapping="NoWrap"
+                           TextTrimming="CharacterEllipsis"
+                           Text="{Binding ActiveEditorHint}" />
+            </DockPanel>
+        </Border>
+
+        <!--  Editor Content (only one editor is instantiated at a time) -->
+        <ContentControl Content="{Binding ActiveEditor}" x:CompileBindings="False">
+            <ContentControl.DataTemplates>
+                <DataTemplate DataType="{x:Type landscapeVm:LandscapeEditorViewModel}">
+                    <editors:LandscapeEditorView />
+                </DataTemplate>
+                <DataTemplate DataType="{x:Type dungeonVm:DungeonEditorViewModel}">
+                    <dungeonEditors:DungeonEditorView />
+                </DataTemplate>
+                <DataTemplate DataType="{x:Type spellVm:SpellEditorViewModel}">
+                    <spellEditors:SpellEditorView />
+                </DataTemplate>
+                <DataTemplate DataType="{x:Type spellSetVm:SpellSetEditorViewModel}">
+                    <spellSetEditors:SpellSetEditorView />
+                </DataTemplate>
+                <DataTemplate DataType="{x:Type skillVm:SkillEditorViewModel}">
+                    <skillEditors:SkillEditorView />
+                </DataTemplate>
+                <DataTemplate DataType="{x:Type experienceVm:ExperienceEditorViewModel}">
+                    <experienceEditors:ExperienceEditorView />
+                </DataTemplate>
+                <DataTemplate DataType="{x:Type vitalVm:VitalEditorViewModel}">
+                    <vitalEditors:VitalEditorView />
+                </DataTemplate>
+                <DataTemplate DataType="{x:Type charGenVm:CharGenEditorViewModel}">
+                    <charGenEditors:CharGenEditorView />
+                </DataTemplate>
+                <DataTemplate DataType="{x:Type layoutVm:LayoutEditorViewModel}">
+                    <layoutEditors:LayoutEditorView />
+                </DataTemplate>
+                <DataTemplate DataType="{x:Type objectDebugVm:ObjectDebugEditorViewModel}">
+                    <objectDebugEditors:ObjectDebugEditorView />
+                </DataTemplate>
+                <DataTemplate DataType="{x:Type weenieVm:WeenieEditorViewModel}">
+                    <weenieEditors:WeenieEditorView />
+                </DataTemplate>
+                <DataTemplate DataType="{x:Type monsterVm:MonsterEditorViewModel}">
+                    <monsterEditors:MonsterEditorView />
+                </DataTemplate>
+                <DataTemplate DataType="{x:Type vm:ReadOnlyInfoViewModel}">
+                    <sharedViews:ReadOnlyInfoView />
+                </DataTemplate>
+            </ContentControl.DataTemplates>
+        </ContentControl>
+    </DockPanel>
+</UserControl>

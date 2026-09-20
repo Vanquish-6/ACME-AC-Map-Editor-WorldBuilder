@@ -1,0 +1,349 @@
+using Acme.Render;
+using Acme.Render.Enums;
+using Acme.Render.GL.Extensions;
+using Acme.Render.GL.Lib;
+using Silk.NET.OpenGL;
+using System.Runtime.InteropServices;
+
+namespace Acme.Render.GL {
+    using GL = Silk.NET.OpenGL.GL;
+    public class ManagedGLTextureArray : ITextureArray {
+        private bool[] _usedLayers;
+        private readonly GL GL;
+        private static int _nextId;
+        private bool _needsMipmapRegeneration;
+        private readonly bool _isCompressed;
+        private int _mipmapDirtyCount;
+        private readonly object _mipmapLock = new object();
+
+        public int Slot { get; } = _nextId++;
+        public int Width { get; private set; }
+        public int Height { get; private set; }
+        public int Size { get; private set; }
+        public TextureFormat Format { get; private set; }
+        public nint NativePtr { get; private set; }
+
+        public ManagedGLTextureArray(OpenGLGraphicsDevice graphicsDevice, TextureFormat format, int width, int height,
+            int size) {
+            if (width <= 0 || height <= 0 || size <= 0) {
+                throw new ArgumentException($"Invalid texture array dimensions: {width}x{height}x{size}");
+            }
+
+            Format = format;
+            Width = width;
+            Height = height;
+            Size = size;
+            _usedLayers = new bool[size];
+            GL = graphicsDevice.GL;
+            _isCompressed = IsCompressedFormat(format);
+            // Drain any pre-existing GL errors using the LOCAL GL object so we never
+            // accidentally read from a different context via the global GLHelpers.Device.
+            while (GL.GetError() != GLEnum.NoError) { }
+
+            NativePtr = (nint)GL.GenTexture();
+            if (NativePtr == 0) {
+                var glErr = GL.GetError();
+                throw new InvalidOperationException(
+                    $"Failed to generate texture array (format={format}, {width}x{height}x{size}). GL error: {glErr}");
+            }
+
+            GL.BindTexture(GLEnum.Texture2DArray, (uint)NativePtr);
+            GLHelpers.CheckErrors();
+
+            int maxDimension = Math.Max(width, height);
+            int mipLevels = _isCompressed ? 1 : (int)Math.Floor(Math.Log2(maxDimension)) + 1;
+
+            GL.TexStorage3D(GLEnum.Texture2DArray, (uint)mipLevels, format.ToGL(), (uint)width, (uint)height,
+                (uint)size);
+            GLHelpers.CheckErrorsWithContext(
+                $"Creating texture array storage (Format={format}, Size={width}x{height}x{size}, MipLevels={mipLevels})");
+
+            if (_isCompressed) {
+                GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureMinFilter,
+                    (int)TextureMinFilter.Linear);
+                GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureMaxLevel,
+                    0); // No mips for compressed
+            }
+            else {
+                GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureMinFilter,
+                    (int)TextureMinFilter.LinearMipmapLinear);
+                GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureMaxLevel, mipLevels - 1);
+            }
+
+            GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+
+            GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
+            GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
+
+            // Set texture swizzle for single-channel formats
+            if (format == TextureFormat.A8) {
+                GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureSwizzleR, (int)GLEnum.One);
+                GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureSwizzleG, (int)GLEnum.One);
+                GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureSwizzleB, (int)GLEnum.One);
+                GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureSwizzleA, (int)GLEnum.Red);
+            }
+
+            GLHelpers.CheckErrors();
+        }
+
+        private bool IsCompressedFormat(TextureFormat format) {
+            return format == TextureFormat.DXT1 ||
+                   format == TextureFormat.DXT3 ||
+                   format == TextureFormat.DXT5;
+        }
+
+        public void Bind(int slot = 0) {
+            if (NativePtr == 0) {
+                throw new InvalidOperationException(
+                    $"Cannot bind texture array: NativePtr is invalid (Slot={Slot}, Size={Width}x{Height}x{Size}).");
+            }
+
+            GL.BindSampler((uint)slot, 0);
+            GL.ActiveTexture(GLEnum.Texture0 + slot);
+            GLHelpers.CheckErrorsHotPath();
+
+            GL.BindTexture(GLEnum.Texture2DArray, (uint)NativePtr);
+            GLHelpers.CheckErrorsHotPath();
+
+            if (!_isCompressed && _needsMipmapRegeneration) {
+                lock (_mipmapLock) {
+                    if (_mipmapDirtyCount > 0) {
+                        if (GLHelpers.ValidateTextureMipmapStatus(GL, GLEnum.Texture2DArray, out string errorMessage)) {
+                            GL.GenerateMipmap(GLEnum.Texture2DArray);
+                            GLHelpers.CheckErrorsWithContext("Generating mipmaps for texture array");
+                            _mipmapDirtyCount = 0;
+                        }
+                        else {
+                            Console.WriteLine($"Mipmap gen skipped: {errorMessage}");
+                        }
+                    }
+                }
+
+                _needsMipmapRegeneration = false;
+            }
+        }
+
+        public int AddLayer(byte[] data) {
+            return AddLayer(data, null, null);
+        }
+
+        public int AddLayer(byte[] data, PixelFormat? uploadPixelFormat, PixelType? uploadPixelType) {
+            // Removed Bind() here to avoid issues with current OpenGL state during atlas creation
+            for (int i = 0; i < _usedLayers.Length; i++) {
+                if (!_usedLayers[i]) {
+                    UpdateLayerInternal(i, data, uploadPixelFormat, uploadPixelType);
+                    _usedLayers[i] = true;
+                    return i;
+                }
+            }
+
+            throw new InvalidOperationException(
+                $"No free layers available in texture array (Slot={Slot}, Size={Width}x{Height}x{Size}).");
+        }
+
+        public int AddLayer(Span<byte> data) {
+            return AddLayer(data.ToArray());
+        }
+
+        public void UpdateLayer(int layer, byte[] data) {
+            UpdateLayer(layer, data, null, null);
+        }
+
+        public void UpdateLayer(int layer, byte[] data, PixelFormat? uploadPixelFormat, PixelType? uploadPixelType) {
+            UpdateLayerInternal(layer, data, uploadPixelFormat, uploadPixelType);
+        }
+
+        private unsafe void UpdateLayerInternal(int layer, byte[] data, PixelFormat? uploadPixelFormat,
+            PixelType? uploadPixelType) {
+            if (NativePtr == 0) {
+                throw new InvalidOperationException("Texture array not created.");
+            }
+
+            // Ensure the texture is bound before uploading
+            GL.BindTexture(GLEnum.Texture2DArray, (uint)NativePtr);
+            GLHelpers.CheckErrors();
+
+            if (layer < 0 || layer >= Size) {
+                throw new ArgumentOutOfRangeException(nameof(layer),
+                    $"Layer index {layer} is out of range [0, {Size - 1}] (Slot={Slot}).");
+            }
+
+            GCHandle pinnedArray = GCHandle.Alloc(data, GCHandleType.Pinned);
+            try {
+                var pixelsPtr = (void*)pinnedArray.AddrOfPinnedObject();
+
+                if (_isCompressed) {
+                    var internalFormat = Format.ToCompressedGL();
+                    GL.CompressedTexSubImage3D(GLEnum.Texture2DArray, 0, 0, 0, layer,
+                        (uint)Width, (uint)Height, 1, internalFormat, (uint)data.Length, pixelsPtr);
+                }
+                else {
+                    var pixelFormat = uploadPixelFormat ?? Format.ToPixelFormat();
+                    var pixelType = uploadPixelType ?? Format.ToPixelType();
+                    GL.TexSubImage3D(GLEnum.Texture2DArray, 0, 0, 0, layer, (uint)Width, (uint)Height, 1,
+                        pixelFormat, pixelType, pixelsPtr);
+                }
+
+                GLHelpers.CheckErrorsWithContext(
+                    $"Uploading layer {layer} for {Format} {Width}x{Height} (Compressed={_isCompressed}) {uploadPixelFormat} // {uploadPixelType} (Slot={Slot})");
+                _needsMipmapRegeneration = true;
+
+                if (!_isCompressed) {
+                    lock (_mipmapLock) {
+                        _mipmapDirtyCount++;
+                    }
+                }
+            }
+            catch (Exception ex) {
+                Console.WriteLine(
+                    $"Error uploading texture layer {layer} for {Width}x{Height} texture array (Slot={Slot}): {ex.Message}");
+                throw;
+            }
+            finally {
+                pinnedArray.Free();
+            }
+        }
+
+        private void ClearLayerForMipmap(int layer) {
+            // Upload a single black/transparent pixel to make layer defined
+            byte[] clearData = new byte[GetExpectedDataSize()];
+            Array.Clear(clearData, 0, clearData.Length); // Zero-fill (black/transparent)
+            UpdateLayerInternal(layer, clearData, null, null); // Re-uses logic, ignores dirty for now
+        }
+
+        private int GetExpectedDataSize() {
+            if (_isCompressed) {
+                return TextureHelpers.GetCompressedLayerSize(Width, Height, Format);
+            }
+
+            return Format switch {
+                TextureFormat.RGBA8 => Width * Height * 4,
+                TextureFormat.RGB8 => Width * Height * 3,
+                TextureFormat.A8 => Width * Height * 1,
+                TextureFormat.Rgba32f => Width * Height * 16,
+                _ => throw new NotSupportedException($"Unsupported format {Format}")
+            };
+        }
+
+        /// <summary>
+        /// Generates mipmaps now if any layers have been modified since the last generation.
+        /// Call after finishing a batch of layer uploads to pay the cost during the upload phase
+        /// rather than during the next Bind() in the render loop.
+        /// </summary>
+        public void FlushMipmaps() {
+            if (_isCompressed || !_needsMipmapRegeneration) return;
+
+            GL.BindTexture(GLEnum.Texture2DArray, (uint)NativePtr);
+
+            lock (_mipmapLock) {
+                if (_mipmapDirtyCount > 0) {
+                    if (GLHelpers.ValidateTextureMipmapStatus(GL, GLEnum.Texture2DArray, out string errorMessage)) {
+                        GL.GenerateMipmap(GLEnum.Texture2DArray);
+                        GLHelpers.CheckErrorsWithContext("Generating mipmaps for texture array (flush)");
+                        _mipmapDirtyCount = 0;
+                    }
+                }
+            }
+
+            _needsMipmapRegeneration = false;
+        }
+
+        public void RemoveLayer(int layer) {
+            if (layer < 0 || layer >= Size) {
+                throw new ArgumentOutOfRangeException(nameof(layer),
+                    $"Layer index {layer} is out of range [0, {Size - 1}] (Slot={Slot}).");
+            }
+
+            if (!_usedLayers[layer]) {
+                throw new InvalidOperationException($"Layer {layer} is already free (Slot={Slot}).");
+            }
+
+            _usedLayers[layer] = false;
+
+            // Make layer defined for mipmap completeness (uncompressed only)
+            if (!_isCompressed) {
+                ClearLayerForMipmap(layer);
+                lock (_mipmapLock) {
+                    _mipmapDirtyCount++; // Mark dirty to regen
+                }
+            }
+        }
+
+        public void Grow(int newSize) {
+            if (newSize <= Size)
+                throw new ArgumentException($"New size {newSize} must be greater than current size {Size}.");
+
+            uint newTex = GL.GenTexture();
+            GL.BindTexture(GLEnum.Texture2DArray, newTex);
+
+            int maxDimension = Math.Max(Width, Height);
+            int mipLevels = _isCompressed ? 1 : (int)Math.Floor(Math.Log2(maxDimension)) + 1;
+
+            GL.TexStorage3D(GLEnum.Texture2DArray, (uint)mipLevels, Format.ToGL(), (uint)Width, (uint)Height, (uint)newSize);
+            GLHelpers.CheckErrorsWithContext($"Growing texture array from {Size} to {newSize}");
+
+            if (_isCompressed) {
+                GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Linear);
+                GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureMaxLevel, 0);
+            }
+            else {
+                GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.LinearMipmapLinear);
+                GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureMaxLevel, mipLevels - 1);
+            }
+
+            GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Linear);
+            GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
+            GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
+
+            if (Format == TextureFormat.A8) {
+                GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureSwizzleR, (int)GLEnum.One);
+                GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureSwizzleG, (int)GLEnum.One);
+                GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureSwizzleB, (int)GLEnum.One);
+                GL.TexParameter(GLEnum.Texture2DArray, TextureParameterName.TextureSwizzleA, (int)GLEnum.Red);
+            }
+
+            for (int i = 0; i < Size; i++) {
+                if (_usedLayers[i]) {
+                    GL.CopyImageSubData(
+                        (uint)NativePtr, GLEnum.Texture2DArray, 0, 0, 0, i,
+                        newTex, GLEnum.Texture2DArray, 0, 0, 0, i,
+                        (uint)Width, (uint)Height, 1);
+                }
+            }
+            GLHelpers.CheckErrorsWithContext("Copying layers during texture array growth");
+
+            GL.DeleteTexture((uint)NativePtr);
+            NativePtr = (nint)newTex;
+
+            var newUsedLayers = new bool[newSize];
+            Array.Copy(_usedLayers, newUsedLayers, Size);
+            _usedLayers = newUsedLayers;
+            Size = newSize;
+
+            _needsMipmapRegeneration = true;
+            lock (_mipmapLock) { _mipmapDirtyCount++; }
+        }
+
+        public bool IsLayerUsed(int layer) {
+            if (layer < 0 || layer >= Size) return false;
+            return _usedLayers[layer];
+        }
+
+        public int GetUsedLayerCount() {
+            return _usedLayers.Count(x => x);
+        }
+
+        public void Unbind() {
+            GL.BindTexture(GLEnum.Texture2DArray, 0);
+            GLHelpers.CheckErrorsHotPath();
+        }
+
+        public void Dispose() {
+            if (NativePtr != 0) {
+                GL.DeleteTexture((uint)NativePtr);
+                GLHelpers.CheckErrors();
+                NativePtr = 0;
+            }
+        }
+    }
+}

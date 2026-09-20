@@ -1,0 +1,324 @@
+[
+  {
+    "id": "ace-generic",
+    "title": "Generic object",
+    "description": "Pickable item. Includes Setup, Icon, physics, appraisal basics.",
+    "weenieType": 1,
+    "ints": [
+      { "type": 1, "value": 128 },
+      { "type": 5, "value": 100 },
+      { "type": 8, "value": 100 },
+      { "type": 16, "value": 1 },
+      { "type": 19, "value": 100 },
+      { "type": 65, "value": 101 },
+      { "type": 93, "value": 1044 },
+      { "type": 174, "value": 1 }
+    ],
+    "bools": [
+      { "type": 22, "value": true }
+    ],
+    "strings": [
+      { "type": 1, "value": "New Object" },
+      { "type": 16, "value": "" }
+    ],
+    "dataIds": [
+      { "type": 1, "value": "0x02000001" },
+      { "type": 8, "value": "0x06001036" }
+    ]
+  },
+  {
+    "id": "ace-melee-weapon",
+    "title": "Melee weapon",
+    "description": "WeenieType MeleeWeapon (6). Basic sword with damage, speed, skill properties.",
+    "weenieType": 6,
+    "ints": [
+      { "type": 1, "value": 1 },
+      { "type": 5, "value": 450 },
+      { "type": 8, "value": 90 },
+      { "type": 9, "value": 1048576 },
+      { "type": 10, "value": 1048576 },
+      { "type": 16, "value": 1 },
+      { "type": 19, "value": 2000 },
+      { "type": 44, "value": 12 },
+      { "type": 45, "value": 1 },
+      { "type": 46, "value": 1 },
+      { "type": 47, "value": 1 },
+      { "type": 48, "value": 11 },
+      { "type": 49, "value": 40 },
+      { "type": 51, "value": 1 },
+      { "type": 65, "value": 101 },
+      { "type": 93, "value": 1044 },
+      { "type": 150, "value": 103 },
+      { "type": 151, "value": 2 },
+      { "type": 158, "value": 2 },
+      { "type": 174, "value": 1 },
+      { "type": 353, "value": 0 }
+    ],
+    "floats": [
+      { "type": 21, "value": 0.95 },
+      { "type": 22, "value": 0.5 },
+      { "type": 29, "value": 1.08 },
+      { "type": 62, "value": 1.0 },
+      { "type": 63, "value": 1.0 }
+    ],
+    "bools": [
+      { "type": 22, "value": true }
+    ],
+    "strings": [
+      { "type": 1, "value": "New Sword" },
+      { "type": 16, "value": "" }
+    ],
+    "dataIds": [
+      { "type": 1, "value": "0x02001578" },
+      { "type": 3, "value": "0x20000034" },
+      { "type": 8, "value": "0x06001B43" },
+      { "type": 22, "value": "0x34000038" }
+    ]
+  },
+  {
+    "id": "ace-armor",
+    "title": "Armor / clothing",
+    "description": "WeenieType Clothing (2). Wearable armor with protection values and slots.",
+    "weenieType": 2,
+    "ints": [
+      { "type": 1, "value": 2 },
+      { "type": 3, "value": 84 },
+      { "type": 4, "value": 2048 },
+      { "type": 5, "value": 1600 },
+      { "type": 8, "value": 140 },
+      { "type": 9, "value": 32 },
+      { "type": 16, "value": 1 },
+      { "type": 19, "value": 3000 },
+      { "type": 27, "value": 2 },
+      { "type": 28, "value": 100 },
+      { "type": 65, "value": 101 },
+      { "type": 93, "value": 1044 },
+      { "type": 174, "value": 1 }
+    ],
+    "floats": [
+      { "type": 13, "value": 1.3 },
+      { "type": 110, "value": 1.0 }
+    ],
+    "bools": [
+      { "type": 22, "value": true }
+    ],
+    "strings": [
+      { "type": 1, "value": "New Armor" },
+      { "type": 16, "value": "" }
+    ],
+    "dataIds": [
+      { "type": 1, "value": "0x02000540" },
+      { "type": 6, "value": "0x0400007E" },
+      { "type": 7, "value": "0x04000397" },
+      { "type": 8, "value": "0x06001B43" }
+    ]
+  },
+  {
+    "id": "ace-creature",
+    "title": "Creature",
+    "description": "WeenieType Creature (10). Full creature stub with vitals, level, motion/sound/combat tables.",
+    "weenieType": 10,
+    "ints": [
+      { "type": 1, "value": 16 },
+      { "type": 2, "value": 1 },
+      { "type": 5, "value": 8000 },
+      { "type": 16, "value": 1 },
+      { "type": 25, "value": 10 },
+      { "type": 40, "value": 1 },
+      { "type": 65, "value": 101 },
+      { "type": 67, "value": 0 },
+      { "type": 68, "value": 13 },
+      { "type": 69, "value": 1 },
+      { "type": 93, "value": 1032 },
+      { "type": 133, "value": 2 },
+      { "type": 146, "value": 500 }
+    ],
+    "floats": [
+      { "type": 1, "value": 5.0 },
+      { "type": 2, "value": 10.0 },
+      { "type": 3, "value": 0.16 },
+      { "type": 13, "value": 0.9 },
+      { "type": 31, "value": 22.0 },
+      { "type": 34, "value": 1.0 },
+      { "type": 36, "value": 1.0 },
+      { "type": 39, "value": 1.1 },
+      { "type": 64, "value": 0.75 },
+      { "type": 65, "value": 0.35 },
+      { "type": 104, "value": 10.0 },
+      { "type": 125, "value": 1.0 }
+    ],
+    "bools": [
+      { "type": 1, "value": true },
+      { "type": 11, "value": true },
+      { "type": 12, "value": true },
+      { "type": 19, "value": true }
+    ],
+    "strings": [
+      { "type": 1, "value": "New Creature" }
+    ],
+    "dataIds": [
+      { "type": 1, "value": "0x02000001" },
+      { "type": 2, "value": "0x09000001" },
+      { "type": 3, "value": "0x20000001" },
+      { "type": 4, "value": "0x30000001" },
+      { "type": 8, "value": "0x06001036" },
+      { "type": 22, "value": "0x3400001B" },
+      { "type": 35, "value": 19 }
+    ]
+  },
+  {
+    "id": "ace-portal",
+    "title": "Portal",
+    "description": "WeenieType Portal (7). Set LinkedPortalOne DID and PortalBitmask.",
+    "weenieType": 7,
+    "ints": [
+      { "type": 1, "value": 65536 },
+      { "type": 16, "value": 32 },
+      { "type": 65, "value": 101 },
+      { "type": 86, "value": 7 },
+      { "type": 93, "value": 3084 },
+      { "type": 111, "value": 49 },
+      { "type": 133, "value": 4 },
+      { "type": 174, "value": 1 }
+    ],
+    "floats": [
+      { "type": 54, "value": -0.1 }
+    ],
+    "bools": [
+      { "type": 1, "value": true },
+      { "type": 11, "value": true },
+      { "type": 12, "value": true },
+      { "type": 13, "value": false },
+      { "type": 14, "value": true },
+      { "type": 88, "value": true }
+    ],
+    "strings": [
+      { "type": 1, "value": "New Portal" },
+      { "type": 38, "value": "" }
+    ],
+    "dataIds": [
+      { "type": 1, "value": "0x20005D4" },
+      { "type": 2, "value": "0x09000003" },
+      { "type": 8, "value": "0x0600106B" },
+      { "type": 31, "value": 0 }
+    ]
+  },
+  {
+    "id": "ace-vendor",
+    "title": "Vendor (NPC shop)",
+    "description": "WeenieType Vendor (12). NPC with merchandise type filters and buy/sell properties.",
+    "weenieType": 12,
+    "ints": [
+      { "type": 1, "value": 16 },
+      { "type": 2, "value": 1 },
+      { "type": 5, "value": 8000 },
+      { "type": 16, "value": 1 },
+      { "type": 25, "value": 5 },
+      { "type": 65, "value": 101 },
+      { "type": 74, "value": -1 },
+      { "type": 75, "value": 1 },
+      { "type": 76, "value": 100000000 },
+      { "type": 93, "value": 1032 },
+      { "type": 133, "value": 4 },
+      { "type": 154, "value": 4 },
+      { "type": 174, "value": 1 }
+    ],
+    "floats": [
+      { "type": 1, "value": 5.0 },
+      { "type": 2, "value": 10.0 },
+      { "type": 37, "value": 0.9 },
+      { "type": 38, "value": 1.55 }
+    ],
+    "bools": [
+      { "type": 1, "value": true },
+      { "type": 11, "value": true },
+      { "type": 12, "value": true },
+      { "type": 13, "value": false },
+      { "type": 19, "value": false },
+      { "type": 39, "value": true }
+    ],
+    "strings": [
+      { "type": 1, "value": "New Vendor" }
+    ],
+    "dataIds": [
+      { "type": 1, "value": "0x02000001" },
+      { "type": 2, "value": "0x09000001" },
+      { "type": 3, "value": "0x20000001" },
+      { "type": 8, "value": "0x06001036" }
+    ]
+  },
+  {
+    "id": "ace-door",
+    "title": "Door",
+    "description": "WeenieType Door (19). Openable door with use/lock properties.",
+    "weenieType": 19,
+    "ints": [
+      { "type": 1, "value": 2048 },
+      { "type": 16, "value": 32 },
+      { "type": 19, "value": 0 },
+      { "type": 38, "value": 9999 },
+      { "type": 65, "value": 101 },
+      { "type": 81, "value": 1 },
+      { "type": 83, "value": 2 },
+      { "type": 93, "value": 24 },
+      { "type": 133, "value": 4 }
+    ],
+    "floats": [
+      { "type": 11, "value": 300.0 },
+      { "type": 54, "value": 2.0 }
+    ],
+    "bools": [
+      { "type": 1, "value": true },
+      { "type": 2, "value": false },
+      { "type": 12, "value": true },
+      { "type": 19, "value": false }
+    ],
+    "strings": [
+      { "type": 1, "value": "New Door" },
+      { "type": 14, "value": "Use this item" }
+    ],
+    "dataIds": [
+      { "type": 1, "value": "0x020006AC" },
+      { "type": 2, "value": "0x09000010" },
+      { "type": 3, "value": "0x20000010" },
+      { "type": 8, "value": "0x06001107" },
+      { "type": 19, "value": "0x10000083" },
+      { "type": 21, "value": "0x15000093" }
+    ]
+  },
+  {
+    "id": "ace-container",
+    "title": "Container / chest",
+    "description": "WeenieType Container (21). Openable chest with capacity and optional lock.",
+    "weenieType": 21,
+    "ints": [
+      { "type": 1, "value": 512 },
+      { "type": 5, "value": 6000 },
+      { "type": 6, "value": 120 },
+      { "type": 16, "value": 32 },
+      { "type": 19, "value": 200 },
+      { "type": 38, "value": 50 },
+      { "type": 65, "value": 101 },
+      { "type": 81, "value": 1 },
+      { "type": 83, "value": 2 },
+      { "type": 93, "value": 1048 },
+      { "type": 133, "value": 4 },
+      { "type": 174, "value": 1 }
+    ],
+    "bools": [
+      { "type": 2, "value": false }
+    ],
+    "strings": [
+      { "type": 1, "value": "New Chest" },
+      { "type": 14, "value": "Use this item" }
+    ],
+    "dataIds": [
+      { "type": 1, "value": "0x02000124" },
+      { "type": 2, "value": "0x09000010" },
+      { "type": 3, "value": "0x20000010" },
+      { "type": 8, "value": "0x06001CEF" },
+      { "type": 19, "value": "0x10000083" },
+      { "type": 21, "value": "0x15000085" }
+    ]
+  }
+]

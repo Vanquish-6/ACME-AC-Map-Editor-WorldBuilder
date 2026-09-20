@@ -1,0 +1,603 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:WorldBuilder.Editors.Monster"
+             xmlns:preview="using:WorldBuilder.Editors.Monster.Views"
+             xmlns:shared="using:WorldBuilder.Views"
+             d:DesignHeight="800" d:DesignWidth="1500"
+             mc:Ignorable="d"
+             x:Class="WorldBuilder.Editors.Monster.Views.MonsterEditorView"
+             x:DataType="vm:MonsterEditorViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="TextBlock.label-muted">
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Foreground" Value="#5a4a6e" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TextBlock.label-hex">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="#90c890" />
+            <Setter Property="FontFamily" Value="Consolas,Courier New,monospace" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.toolbar-btn">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#a89bbe" />
+        </Style>
+        <Style Selector="Button.toolbar-btn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#33ffffff" />
+            <Setter Property="Foreground" Value="#e0d8ef" />
+        </Style>
+        <Style Selector="Button.part-header-btn">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="#7a5a8e" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.part-header-btn:pointerover /template/ ContentPresenter">
+            <Setter Property="Foreground" Value="#d47474" />
+        </Style>
+        <Style Selector="Border.slot-target">
+            <Setter Property="BorderBrush" Value="#2a1d42" />
+            <Setter Property="BorderThickness" Value="2" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+        <Style Selector="Border.slot-target.active">
+            <Setter Property="BorderBrush" Value="#74b0ec" />
+        </Style>
+        <!-- Surface row background: subtle highlight when this slot is active -->
+        <Style Selector="Border.surface-row">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="Border.surface-row.active-row">
+            <Setter Property="Background" Value="#131128" />
+            <Setter Property="BorderBrush" Value="#2a2060" />
+        </Style>
+        <Style Selector="Button.part-chip">
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="Background" Value="#1a1535" />
+            <Setter Property="BorderBrush" Value="#2a1d42" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="12" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="#a89bbe" />
+        </Style>
+        <Style Selector="Button.part-chip:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#242050" />
+        </Style>
+        <Style Selector="Button.browser-thumb">
+            <Setter Property="Padding" Value="2" />
+            <Setter Property="Margin" Value="2" />
+            <Setter Property="Background" Value="#1a1535" />
+            <Setter Property="BorderBrush" Value="#2a1d42" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="3" />
+        </Style>
+        <Style Selector="Button.browser-thumb:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#2a2550" />
+        </Style>
+    </UserControl.Styles>
+
+    <DockPanel>
+
+        <!-- ── Toolbar ─────────────────────────────────────────────────────── -->
+        <Border ZIndex="2" DockPanel.Dock="Top" Background="#120c22"
+                BorderBrush="#2a1d42" BorderThickness="0,0,0,1" Padding="6,4">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" FontSize="11"
+                           Foreground="#5a4a6e"
+                           Text="Tip: 0x010001EC = invisible mesh  ·  Preview updates live with overrides applied" />
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <Button Classes="toolbar-btn" Content="Search" Command="{Binding SearchWeeniesCommand}" />
+                    <Button Classes="toolbar-btn" Content="Reload"
+                            Command="{Binding ReloadOverridesCommand}"
+                            IsVisible="{Binding SelectedWeenie, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                    <Button Classes="toolbar-btn" Content="Clear Overrides"
+                            Command="{Binding ClearAllOverridesCommand}" Foreground="#c47474" />
+                    <Border Width="1" Background="#2a1d42" Margin="4,0" />
+                    <Button Classes="toolbar-btn" Content="Copy SQL"
+                            Command="{Binding CopyToClipboardCommand}" Foreground="#74b0ec" />
+                    <Button Classes="primary" Content="Save to DB"
+                            Command="{Binding SaveToDbCommand}" />
+                    <Border Width="1" Background="#2a1d42" Margin="4,0" />
+                    <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" FontSize="12"
+                               Foreground="#a89bbe" TextWrapping="Wrap" MaxWidth="480" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <shared:EditorGuideBanner DockPanel.Dock="Top"
+                                  Margin="10,8,10,0"
+                                  Title="Monsters"
+                                  Body="Create or override creature weenies. Search a creature, change how it looks, then Save to DB. Invisible mesh 0x010001EC hides a part." />
+
+        <!-- ── Main 3-column layout ────────────────────────────────────────── -->
+        <Grid>
+                <Grid ColumnDefinitions="240,4,*,4,360">
+
+                <!-- Column 0: Creature list ─────────────────────────────── -->
+                <DockPanel Grid.Column="0" Background="#1a1030">
+                    <Border DockPanel.Dock="Top" Padding="8,8"
+                            BorderBrush="#2a1d42" BorderThickness="0,0,0,1">
+                        <StackPanel Spacing="6">
+                            <TextBox Text="{Binding SearchText}"
+                                     Watermark="Name contains… (empty = first 2500)"
+                                     FontSize="12" MinHeight="30" />
+                        </StackPanel>
+                    </Border>
+                    <ListBox ItemsSource="{Binding Weenies}"
+                             SelectedItem="{Binding SelectedWeenie}"
+                             Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate DataType="vm:MonsterListEntryVm">
+                                <StackPanel Margin="6,4">
+                                    <TextBlock Text="{Binding Name}" Foreground="#e8e0f8"
+                                               FontSize="13" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Subtitle}" Foreground="#7a6a92" FontSize="11" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </DockPanel>
+
+                <GridSplitter Grid.Column="1" Width="4" Background="Transparent" ResizeDirection="Columns" />
+
+                <!-- Column 2: Part cards + SQL ──────────────────────────── -->
+                <DockPanel Grid.Column="2" Background="#140e24">
+
+                    <!-- Target WCID + SQL expander at bottom -->
+                    <Expander DockPanel.Dock="Bottom" Header="SQL Output"
+                              Background="#0c0a1a" BorderBrush="#2a1d42" BorderThickness="0,1,0,0"
+                              Padding="0" MaxHeight="200">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Spacing="8"
+                                        Margin="8,4" Background="#0c0a1a">
+                                <TextBlock Classes="label-muted" Text="Target WCID:" VerticalAlignment="Center" />
+                                <TextBox Text="{Binding TargetObjectId}" Width="120" FontSize="12"
+                                         MinHeight="26" Padding="6,3"
+                                         FontFamily="Consolas,Courier New,monospace"
+                                         Watermark="uses selected weenie" />
+                                <Button Classes="toolbar-btn" Content="Regenerate"
+                                        Command="{Binding RegenerateSqlManualCommand}" Foreground="#c4b474" />
+                                <Button Classes="toolbar-btn" Content="Copy"
+                                        Command="{Binding CopyToClipboardCommand}" Foreground="#74b0ec" />
+                                <Button Classes="toolbar-btn" Content="Save to DB"
+                                        Command="{Binding SaveToDbCommand}" Foreground="#6ec07a" />
+                            </StackPanel>
+                            <TextBox Text="{Binding SqlOutput}" IsReadOnly="True"
+                                     AcceptsReturn="True" TextWrapping="NoWrap"
+                                     FontFamily="Consolas,Courier New,monospace"
+                                     FontSize="11" Background="#08060f" Foreground="#c8e8c0"
+                                     BorderThickness="0" Padding="10,8" />
+                        </DockPanel>
+                    </Expander>
+
+                    <!-- Parts status bar -->
+                    <Border DockPanel.Dock="Top" Padding="10,5" Background="#100c20"
+                            BorderBrush="#1e1535" BorderThickness="0,0,0,1">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" FontSize="10"
+                                       Foreground="#4a3a5e" Text="Click a replacement slot to target it, then pick a texture from the browser →" />
+                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                <TextBlock Text="{Binding DatPartsStatus}"
+                                           FontSize="11" Foreground="#9a8ab8" VerticalAlignment="Center" />
+                                <Border Width="12" Height="12" CornerRadius="6"
+                                        Background="#4a7ab8" IsVisible="{Binding IsDatLoading}"
+                                        VerticalAlignment="Center" />
+                            </StackPanel>
+                        </DockPanel>
+                    </Border>
+
+                    <!-- Mix & Match donor panel -->
+                    <Expander DockPanel.Dock="Top" Header="Mix &amp; Match — Donor Parts"
+                              Background="#0e0b1c" BorderBrush="#2a1d42" BorderThickness="0,0,0,1"
+                              Padding="0" IsExpanded="False">
+                        <DockPanel Height="260">
+                            <!-- Donor search bar -->
+                            <Border DockPanel.Dock="Top" Padding="8,6" Background="#0c0a18"
+                                    BorderBrush="#1e1535" BorderThickness="0,0,0,1">
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Right" Classes="toolbar-btn"
+                                            Content="Search" Command="{Binding SearchDonorWeeniesCommand}"
+                                            IsEnabled="{Binding !IsDonorBusy}" />
+                                    <TextBox Text="{Binding DonorSearchText}"
+                                             Watermark="Search donor creature…"
+                                             FontSize="11" MinHeight="26" Padding="6,3" Margin="0,0,4,0" />
+                                </DockPanel>
+                            </Border>
+
+                            <!-- Selected donor status -->
+                            <Border DockPanel.Dock="Top" Padding="8,5" Background="#0a0820"
+                                    BorderBrush="#1e1535" BorderThickness="0,0,0,1">
+                                <TextBlock Text="{Binding SelectedDonorLabel}"
+                                           FontSize="11" Foreground="#74b0ec" TextWrapping="Wrap" />
+                            </Border>
+
+                            <!-- Donor creature list + donor parts (side by side) -->
+                            <Grid ColumnDefinitions="200,4,*">
+                                <!-- Donor creature list -->
+                                <DockPanel Grid.Column="0" Background="#0d0b1a">
+                                    <TextBlock DockPanel.Dock="Top" Text="{Binding DonorPartsStatus}"
+                                               FontSize="10" Foreground="#5a4a6e" Margin="8,4"
+                                               TextWrapping="Wrap" />
+                                    <ListBox ItemsSource="{Binding DonorWeenies}"
+                                             SelectedItem="{Binding SelectedDonorWeenie}"
+                                             Background="Transparent" FontSize="11">
+                                        <ListBox.ItemTemplate>
+                                            <DataTemplate DataType="vm:MonsterListEntryVm">
+                                                <StackPanel Margin="4,2">
+                                                    <TextBlock Text="{Binding Name}" Foreground="#e8e0f8"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding Subtitle}" Foreground="#5a4a6e" FontSize="10" />
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ListBox.ItemTemplate>
+                                    </ListBox>
+                                </DockPanel>
+
+                                <GridSplitter Grid.Column="1" Width="4" Background="Transparent" ResizeDirection="Columns" />
+
+                                <!-- Donor parts from selected creature -->
+                                <ScrollViewer Grid.Column="2" Background="#0c0a16">
+                                    <ItemsControl ItemsSource="{Binding DonorPartGroups}" Margin="6,4">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate DataType="vm:PartGroupVm">
+                                                <Border Margin="0,3" Padding="6,5"
+                                                        Background="#121020" CornerRadius="4"
+                                                        BorderBrush="#2a1d42" BorderThickness="1">
+                                                    <DockPanel>
+                                                        <!-- Select this donor part -->
+                                                        <Button DockPanel.Dock="Right"
+                                                                Classes="toolbar-btn" Content="Select ✓"
+                                                                Foreground="#74b0ec" FontSize="11" Padding="8,3"
+                                                                Command="{Binding $parent[UserControl].DataContext.SelectDonorPartCommand}"
+                                                                CommandParameter="{Binding}"
+                                                                ToolTip.Tip="Select this part — then click '← Apply donor' on any target part above" />
+                                                        <StackPanel Spacing="3">
+                                                            <StackPanel Orientation="Horizontal" Spacing="6">
+                                                                <TextBlock Text="{Binding PartLabel}"
+                                                                           Foreground="#c8a8e8" FontSize="11"
+                                                                           FontWeight="SemiBold" />
+                                                                <TextBlock Text="{Binding GfxObjLabel}"
+                                                                           Foreground="#7a9ab8" FontSize="10"
+                                                                           FontFamily="Consolas,Courier New,monospace"
+                                                                           VerticalAlignment="Center" />
+                                                            </StackPanel>
+                                                            <!-- Donor part surface thumbnails -->
+                                                            <ItemsControl ItemsSource="{Binding Surfaces}">
+                                                                <ItemsControl.ItemsPanel>
+                                                                    <ItemsPanelTemplate>
+                                                                        <StackPanel Orientation="Horizontal" Spacing="3" />
+                                                                    </ItemsPanelTemplate>
+                                                                </ItemsControl.ItemsPanel>
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate DataType="vm:SurfaceOverrideVm">
+                                                                        <Border Width="40" Height="40" CornerRadius="3"
+                                                                                Background="#221840" ClipToBounds="True">
+                                                                            <Image Source="{Binding OriginalThumbnail}"
+                                                                                   Stretch="UniformToFill" />
+                                                                        </Border>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                        </StackPanel>
+                                                    </DockPanel>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </Grid>
+                        </DockPanel>
+                    </Expander>
+
+                    <!-- Scrollable part cards -->
+                    <ScrollViewer>
+                        <StackPanel Margin="10,8" Spacing="8">
+                            <ItemsControl ItemsSource="{Binding PartGroups}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="vm:PartGroupVm">
+                                        <Border Background="#1a1030" CornerRadius="6" Margin="0,0,0,2"
+                                                BorderBrush="#2a1d42" BorderThickness="1">
+                                            <StackPanel>
+
+                                                <!-- Part card header -->
+                                                <Border Background="#120c22" Padding="10,6"
+                                                        CornerRadius="6,6,0,0"
+                                                        BorderBrush="#2a1d42" BorderThickness="0,0,0,1">
+                                                    <DockPanel>
+                                                        <Button DockPanel.Dock="Right"
+                                                                Classes="part-header-btn"
+                                                                Command="{Binding $parent[UserControl].DataContext.ToggleRemovePartCommand}"
+                                                                CommandParameter="{Binding}"
+                                                                ToolTip.Tip="Toggle: replaces this part mesh with the invisible gfxobj (0x010001EC)">
+                                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                                <TextBlock Text="Remove Part"
+                                                                           IsVisible="{Binding !IsRemoved}" />
+                                                                <TextBlock Text="Restore Part"
+                                                                           IsVisible="{Binding IsRemoved}"
+                                                                           Foreground="#6ec07a" />
+                                                            </StackPanel>
+                                                        </Button>
+                                                        <!-- Apply selected donor to THIS part (cross-index swap) -->
+                                                        <Button DockPanel.Dock="Right"
+                                                                Classes="part-header-btn"
+                                                                Foreground="#74b0ec"
+                                                                Command="{Binding $parent[UserControl].DataContext.ApplySelectedDonorToPartCommand}"
+                                                                CommandParameter="{Binding}"
+                                                                IsVisible="{Binding $parent[UserControl].DataContext.SelectedDonorPart, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                                                ToolTip.Tip="Apply selected donor part's mesh to this slot" >
+                                                            <TextBlock Text="← Apply donor" />
+                                                        </Button>
+                                                        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding PartLabel}"
+                                                                       Foreground="#c8a8e8" FontSize="13"
+                                                                       FontWeight="SemiBold" />
+                                                            <TextBlock Text="{Binding GfxObjLabel}"
+                                                                       FontFamily="Consolas,Courier New,monospace"
+                                                                       FontSize="11" Foreground="#4a3a6a"
+                                                                       VerticalAlignment="Center" />
+                                                            <!-- Donor swap indicator -->
+                                                            <Border Background="#1a2a1a" CornerRadius="3" Padding="6,2"
+                                                                    IsVisible="{Binding DonorGfxObjHex, Converter={x:Static StringConverters.IsNotNullOrEmpty}}">
+                                                                <StackPanel Orientation="Horizontal" Spacing="5">
+                                                                    <TextBlock Text="⇄" Foreground="#6ec07a" FontSize="11" />
+                                                                    <TextBlock Text="{Binding DonorGfxObjHex}"
+                                                                               Foreground="#6ec07a" FontSize="10"
+                                                                               FontFamily="Consolas,Courier New,monospace" />
+                                                                    <TextBlock Text="{Binding DonorLabel}"
+                                                                               Foreground="#4a7a4a" FontSize="10" />
+                                                                    <Button Padding="2,0" Background="Transparent" BorderThickness="0"
+                                                                            Command="{Binding $parent[UserControl].DataContext.ClearDonorPartCommand}"
+                                                                            CommandParameter="{Binding}">
+                                                                        <TextBlock Text="✕" FontSize="9" Foreground="#4a5a4a" />
+                                                                    </Button>
+                                                                </StackPanel>
+                                                            </Border>
+                                                        </StackPanel>
+                                                    </DockPanel>
+                                                </Border>
+
+                                                <!-- Removed state overlay -->
+                                                <Border Padding="16,12" Background="#1a0a0a"
+                                                        IsVisible="{Binding IsRemoved}">
+                                                    <StackPanel Spacing="4">
+                                                        <TextBlock Text="PART REMOVED — will be replaced with invisible mesh"
+                                                                   Foreground="#c47474" FontSize="12"
+                                                                   FontWeight="SemiBold" />
+                                                        <TextBlock Text="anim_part override: animation_Id = 0x010001EC"
+                                                                   Foreground="#7a3a3a" FontSize="11"
+                                                                   FontFamily="Consolas,Courier New,monospace" />
+                                                    </StackPanel>
+                                                </Border>
+
+                                                <!-- Surface texture slots -->
+                                                <ItemsControl ItemsSource="{Binding Surfaces}"
+                                                              IsVisible="{Binding !IsRemoved}"
+                                                              Margin="0,2,0,4">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate DataType="vm:SurfaceOverrideVm">
+                                                            <Border Classes="surface-row"
+                                                                    Classes.active-row="{Binding IsActive}"
+                                                                    CornerRadius="4" Margin="6,2">
+                                                                <Grid ColumnDefinitions="*,28,*">
+
+                                                                    <!-- ORIGINAL side -->
+                                                                    <DockPanel Grid.Column="0" Margin="8,8,4,8">
+                                                                        <TextBlock DockPanel.Dock="Top"
+                                                                                   Text="ORIGINAL" FontSize="9"
+                                                                                   Foreground="#4a3a6e" Margin="0,0,0,5" />
+                                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                                            <Border Width="56" Height="56"
+                                                                                    Background="#221840" CornerRadius="3"
+                                                                                    ClipToBounds="True">
+                                                                                <Panel>
+                                                                                    <Border Background="#1a1035"
+                                                                                            IsVisible="{Binding OriginalThumbnail, Converter={x:Static ObjectConverters.IsNull}}" />
+                                                                                    <Image Source="{Binding OriginalThumbnail}"
+                                                                                           Stretch="UniformToFill"
+                                                                                           IsVisible="{Binding OriginalThumbnail, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                                                </Panel>
+                                                                            </Border>
+                                                                            <TextBlock Text="{Binding OriginalLabel}"
+                                                                                       Classes="label-hex"
+                                                                                       VerticalAlignment="Center"
+                                                                                       TextWrapping="Wrap"
+                                                                                       MaxWidth="120" />
+                                                                        </StackPanel>
+                                                                    </DockPanel>
+
+                                                                    <!-- Center arrow -->
+                                                                    <TextBlock Grid.Column="1" Text="→"
+                                                                               Foreground="#3a2a5e" FontSize="20"
+                                                                               HorizontalAlignment="Center"
+                                                                               VerticalAlignment="Center" />
+
+                                                                    <!-- REPLACE WITH side — click thumbnail to activate -->
+                                                                    <DockPanel Grid.Column="2" Margin="4,8,8,8">
+                                                                        <TextBlock DockPanel.Dock="Top"
+                                                                                   Text="REPLACE WITH" FontSize="9"
+                                                                                   Foreground="#4a3a6e" Margin="0,0,0,5" />
+                                                                        <StackPanel Orientation="Horizontal" Spacing="8">
+                                                                            <!-- Clickable thumbnail / placeholder -->
+                                                                            <Button Padding="0"
+                                                                                    Background="Transparent"
+                                                                                    BorderThickness="0"
+                                                                                    Command="{Binding $parent[UserControl].DataContext.ActivateSlotCommand}"
+                                                                                    CommandParameter="{Binding}"
+                                                                                    ToolTip.Tip="Click to target this slot, then pick a texture from the browser on the right">
+                                                                                <Border Classes="slot-target"
+                                                                                        Classes.active="{Binding IsActive}"
+                                                                                        Width="56" Height="56"
+                                                                                        CornerRadius="3"
+                                                                                        ClipToBounds="True">
+                                                                                    <Panel>
+                                                                                        <!-- Empty: explicitly styled placeholder, not a "broken image" -->
+                                                                                        <StackPanel IsVisible="{Binding ReplacementThumbnail, Converter={x:Static ObjectConverters.IsNull}}"
+                                                                                                    VerticalAlignment="Center" HorizontalAlignment="Center"
+                                                                                                    Spacing="1">
+                                                                                            <TextBlock Text="＋" FontSize="18" Foreground="#3a3060"
+                                                                                                       HorizontalAlignment="Center" />
+                                                                                            <TextBlock Text="pick" FontSize="8" Foreground="#3a3060"
+                                                                                                       HorizontalAlignment="Center" />
+                                                                                        </StackPanel>
+                                                                                        <!-- Filled: replacement thumbnail -->
+                                                                                        <Image Source="{Binding ReplacementThumbnail}"
+                                                                                               Stretch="UniformToFill"
+                                                                                               IsVisible="{Binding ReplacementThumbnail, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                                                                    </Panel>
+                                                                                </Border>
+                                                                            </Button>
+
+                                                                            <!-- Hex input + clear -->
+                                                                            <StackPanel VerticalAlignment="Center" Spacing="3">
+                                                                                <TextBox Text="{Binding ReplacementHex}"
+                                                                                         Width="145" FontSize="11"
+                                                                                         MinHeight="26" Padding="6,3"
+                                                                                         FontFamily="Consolas,Courier New,monospace"
+                                                                                         Watermark="0x05... or pick →"
+                                                                                         Foreground="#c8d8f0" />
+                                                                                <Button Padding="0" Height="16"
+                                                                                        Background="Transparent"
+                                                                                        BorderThickness="0"
+                                                                                        IsVisible="{Binding HasReplacement}"
+                                                                                        Command="{Binding $parent[UserControl].DataContext.ClearSlotCommand}"
+                                                                                        CommandParameter="{Binding}">
+                                                                                    <TextBlock Text="✕ clear" FontSize="10"
+                                                                                               Foreground="#5a3a5e" />
+                                                                                </Button>
+                                                                            </StackPanel>
+                                                                        </StackPanel>
+                                                                    </DockPanel>
+
+                                                                </Grid>
+                                                            </Border>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <!-- Empty state -->
+                            <Border Padding="24" IsVisible="{Binding PartGroups.Count, Converter={x:Static ObjectConverters.IsNull}}">
+                                <TextBlock FontSize="13" Foreground="#3a2a5e" TextWrapping="Wrap" TextAlignment="Center"
+                                           Text="Search for a creature and select it to load its body parts here.&#xA;Each part shows its current texture. Click a replacement slot, then pick a texture from the browser on the right." />
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </DockPanel>
+
+                <GridSplitter Grid.Column="3" Width="4" Background="Transparent" ResizeDirection="Columns" />
+
+                <!-- Column 4: 3D preview + texture browser ─────────────── -->
+                <DockPanel Grid.Column="4" Background="#0d0a14">
+
+                    <!-- 3D preview -->
+                    <Border DockPanel.Dock="Top" Height="380"
+                            BorderBrush="#2a1d42" BorderThickness="0,0,0,1"
+                            ClipToBounds="True">
+                        <Grid>
+                            <preview:MonsterPreviewView
+                                SetupDid="{Binding PreviewSetupDid}"
+                                TextureOverrides="{Binding PreviewTextureOverrides}"
+                                HiddenPartIndices="{Binding PreviewHiddenParts}"
+                                GfxObjRemapping="{Binding PreviewGfxObjRemapping}"
+                                CreaturePalette="{Binding PreviewCreaturePalette}" />
+                            <!-- floating label — IsHitTestVisible=False so it never blocks the GL surface -->
+                            <TextBlock Text="Live preview  ·  drag to rotate  ·  scroll to zoom"
+                                       FontSize="9" Foreground="#3a2a5e"
+                                       HorizontalAlignment="Left" VerticalAlignment="Top"
+                                       Margin="8,4" IsHitTestVisible="False" />
+                        </Grid>
+                    </Border>
+
+                    <!-- Texture browser -->
+                    <DockPanel>
+                        <!-- Browser controls -->
+                        <Border DockPanel.Dock="Top" Padding="8,6"
+                                Background="#100c1e" BorderBrush="#1e1535" BorderThickness="0,0,0,1">
+                            <StackPanel Spacing="5">
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Right"
+                                            Content="Import…"
+                                            Command="{Binding ImportTextureCommand}"
+                                            IsVisible="{Binding CanImportTexture}"
+                                            FontSize="10" Padding="6,2"
+                                            ToolTip.Tip="Import an image file as a new texture. Writes to DAT on project export." />
+                                    <TextBlock Text="{Binding ActiveSlotLabel}"
+                                               FontSize="11" Foreground="#7a6ab8"
+                                               TextTrimming="CharacterEllipsis"
+                                               VerticalAlignment="Center" />
+                                </DockPanel>
+                                <TextBox Text="{Binding BrowserSearchText}"
+                                         Watermark="Filter by hex ID…"
+                                         FontSize="11" MinHeight="26" Padding="6,3"
+                                         FontFamily="Consolas,Courier New,monospace" />
+                                <TextBlock Text="{Binding BrowserStatus}"
+                                           FontSize="10" Foreground="#4a3a5e" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Load more button -->
+                        <Button DockPanel.Dock="Bottom" Content="Load More Textures"
+                                Command="{Binding LoadMoreBrowserCommand}"
+                                IsVisible="{Binding CanLoadMoreBrowser}"
+                                HorizontalAlignment="Stretch"
+                                Padding="8,6" FontSize="11"
+                                Background="#1a1535" Foreground="#7a6ab8"
+                                BorderThickness="0,1,0,0" BorderBrush="#2a1d42" />
+
+                        <!-- Thumbnail grid -->
+                        <ScrollViewer>
+                            <ItemsControl ItemsSource="{Binding BrowserItems}" Margin="4">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="vm:SurfaceTextureItem">
+                                        <Button Classes="browser-thumb"
+                                                Command="{Binding $parent[UserControl].DataContext.PickTextureCommand}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip.Tip="{Binding DisplayId}">
+                                            <Panel Width="56" Height="56">
+                                                <Border Background="#221840" CornerRadius="2"
+                                                        IsVisible="{Binding Thumbnail, Converter={x:Static ObjectConverters.IsNull}}" />
+                                                <Image Source="{Binding Thumbnail}"
+                                                       Width="56" Height="56" Stretch="Uniform"
+                                                       IsVisible="{Binding Thumbnail, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                            </Panel>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </DockPanel>
+
+                </DockPanel>
+            </Grid>
+
+            <!-- Loading overlay -->
+            <Border ZIndex="10" IsVisible="{Binding IsBusy}" Background="#AA000000"
+                    HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                <TextBlock Text="Loading…" HorizontalAlignment="Center" VerticalAlignment="Center"
+                           Foreground="White" FontSize="16" />
+            </Border>
+        </Grid>
+
+    </DockPanel>
+</UserControl>

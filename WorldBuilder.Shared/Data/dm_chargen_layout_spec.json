@@ -1,0 +1,213 @@
+{
+  "version": 2,
+  "name": "char_gen_wizard",
+  "description": "Retail char-gen wrapper and page chain, with a six-state DM approximation that reshapes the shell and child pages without adding new client states.",
+  "layouts": [
+    {
+      "layoutId": "0x21000038",
+      "module": "gmCharGenMainUI",
+      "clientField": "m_rootField",
+      "role": "wizard_shell_wrapper",
+      "sourceElementId": "0x100003CC",
+      "notes": "Actual retail wrapper under the char-gen root element. Hosts the nested tab bar, footer bar, and six hardcoded child page slots."
+    },
+    {
+      "layoutId": "0x21000039",
+      "module": "gmCharGenMainUI",
+      "clientField": "m_ProgressBar",
+      "role": "wizard_top_tab_bar",
+      "sourceElementId": "0x100003CE",
+      "notes": "Nested top tab bar. The sanitized field name is misleading; this element resolves to the six page buttons."
+    },
+    {
+      "layoutId": "0x2100003A",
+      "module": "gmCharGenMainUI",
+      "clientField": "m_MainMenu",
+      "role": "wizard_footer_bar",
+      "sourceElementId": "0x100003CF",
+      "notes": "Footer bar with left/right/finish/help/exit/random controls."
+    },
+    {
+      "layoutId": "0x21000046",
+      "module": "gmCGHeritagePage",
+      "clientField": "m_pHeritagePage",
+      "role": "heritage_page",
+      "sourceElementId": "0x100003D1",
+      "hardcodedProgressState": 1,
+      "notes": "Hardcoded page slot 1 in gmCharGenMainUI__SetProgressState."
+    },
+    {
+      "layoutId": "0x21000047",
+      "module": "gmCGProfessionPage",
+      "clientField": "m_pProfessionPage",
+      "role": "profession_page",
+      "sourceElementId": "0x100003D2",
+      "hardcodedProgressState": 2,
+      "notes": "Hardcoded page slot 2 in gmCharGenMainUI__SetProgressState."
+    },
+    {
+      "layoutId": "0x21000048",
+      "module": "gmCGSkillsPage",
+      "clientField": "m_pSkillsPage",
+      "role": "skills_page",
+      "sourceElementId": "0x100003D3",
+      "hardcodedProgressState": 3,
+      "notes": "Hardcoded page slot 3 in gmCharGenMainUI__SetProgressState."
+    },
+    {
+      "layoutId": "0x21000049",
+      "module": "gmCGAppearancePage",
+      "clientField": "m_pAppearancePage",
+      "role": "appearance_page",
+      "sourceElementId": "0x100003D4",
+      "hardcodedProgressState": 4,
+      "notes": "Merged retail appearance page. Contains internal Face and Clothes toggles, but no heraldry control."
+    },
+    {
+      "layoutId": "0x2100004A",
+      "module": "gmCGTownPage",
+      "clientField": "m_pTownPage",
+      "role": "town_page",
+      "sourceElementId": "0x100003D5",
+      "hardcodedProgressState": 5,
+      "notes": "Hardcoded page slot 5 in gmCharGenMainUI__SetProgressState."
+    },
+    {
+      "layoutId": "0x2100004B",
+      "module": "gmCGSummaryPage",
+      "clientField": "m_pSummaryPage",
+      "role": "summary_page",
+      "sourceElementId": "0x100003D6",
+      "hardcodedProgressState": 6,
+      "notes": "Hardcoded page slot 6 in gmCharGenMainUI__SetProgressState."
+    },
+    {
+      "layoutId": "0x2100004C",
+      "module": "gmCGAppearancePage",
+      "clientField": "shared_base",
+      "role": "appearance_shared_controls",
+      "notes": "Shared base used by face/clothes subcontrols, color wheel, and preview camera controls."
+    }
+  ],
+  "blockedFeatures": [
+    {
+      "area": "top_level_page_count",
+      "reason": "gmCharGenMainUI__SetProgressState hardcodes exactly six progress states and six child page pointers.",
+      "source": "gmCharGenMainUI.cpp"
+    },
+    {
+      "area": "child_page_lookup",
+      "reason": "gmCharGenMainUI resolves fixed child element ids 0x100003D1 through 0x100003D6; adding new master pages is not layout-only.",
+      "source": "gmCharGenMainUI.cpp"
+    },
+    {
+      "area": "heraldry_page",
+      "reason": "gmCGAppearancePage only exposes Face and Clothes. No heraldry page/button is wired in the retail char-gen shell.",
+      "source": "gmCGAppearancePage.cpp"
+    }
+  ],
+  "operations": [
+    { "type": "set_bounds", "layoutId": "0x21000038", "elementId": "0x100003CE", "x": 24, "y": 12, "width": 752, "height": 56 },
+    { "type": "set_bounds", "layoutId": "0x21000038", "elementId": "0x100003CF", "x": 0, "y": 542, "width": 800, "height": 58 },
+
+    { "type": "set_bounds", "layoutId": "0x21000039", "elementId": "0x100003EE", "x": 24, "y": 12, "width": 752, "height": 56 },
+    { "type": "set_bounds", "layoutId": "0x21000039", "elementId": "0x100003EF", "x": 16, "y": 12, "width": 104, "height": 36 },
+    { "type": "set_bounds", "layoutId": "0x21000039", "elementId": "0x100003F0", "x": 132, "y": 12, "width": 122, "height": 36 },
+    { "type": "set_bounds", "layoutId": "0x21000039", "elementId": "0x100003F1", "x": 266, "y": 12, "width": 86, "height": 36 },
+    { "type": "set_bounds", "layoutId": "0x21000039", "elementId": "0x100003F2", "x": 364, "y": 12, "width": 130, "height": 36 },
+    { "type": "set_bounds", "layoutId": "0x21000039", "elementId": "0x100003F3", "x": 506, "y": 12, "width": 84, "height": 36 },
+    { "type": "set_bounds", "layoutId": "0x21000039", "elementId": "0x100003F4", "x": 602, "y": 12, "width": 120, "height": 36 },
+
+    { "type": "set_bounds", "layoutId": "0x2100003A", "elementId": "0x100003C5", "x": 0, "y": 542, "width": 800, "height": 58 },
+    { "type": "set_bounds", "layoutId": "0x2100003A", "elementId": "0x100003C6", "x": 24, "y": 8, "width": 50, "height": 44 },
+    { "type": "set_bounds", "layoutId": "0x2100003A", "elementId": "0x100003C7", "x": 82, "y": 8, "width": 50, "height": 44 },
+    { "type": "set_bounds", "layoutId": "0x2100003A", "elementId": "0x100003C8", "x": 676, "y": 8, "width": 100, "height": 42 },
+    { "type": "set_bounds", "layoutId": "0x2100003A", "elementId": "0x100003C9", "x": 430, "y": 18, "width": 60, "height": 24 },
+    { "type": "set_bounds", "layoutId": "0x2100003A", "elementId": "0x100003CA", "x": 504, "y": 18, "width": 56, "height": 24 },
+    { "type": "set_bounds", "layoutId": "0x2100003A", "elementId": "0x100003CB", "x": 574, "y": 18, "width": 88, "height": 24 },
+
+    { "type": "set_bounds", "layoutId": "0x21000046", "elementId": "0x100003BE", "x": 330, "y": 92, "width": 215, "height": 432 },
+    { "type": "set_bounds", "layoutId": "0x21000046", "elementId": "0x100003BF", "x": 36, "y": 92, "width": 276, "height": 30 },
+    { "type": "set_bounds", "layoutId": "0x21000046", "elementId": "0x100003C1", "x": 36, "y": 126, "width": 276, "height": 30 },
+    { "type": "set_bounds", "layoutId": "0x21000046", "elementId": "0x100003C2", "x": 36, "y": 160, "width": 276, "height": 30 },
+    { "type": "set_bounds", "layoutId": "0x21000046", "elementId": "0x100003C3", "x": 36, "y": 194, "width": 276, "height": 30 },
+    { "type": "set_bounds", "layoutId": "0x21000046", "elementId": "0x10000590", "x": 36, "y": 228, "width": 276, "height": 30 },
+    { "type": "set_bounds", "layoutId": "0x21000046", "elementId": "0x10000591", "x": 36, "y": 262, "width": 276, "height": 30 },
+    { "type": "set_bounds", "layoutId": "0x21000046", "elementId": "0x100005A9", "x": 36, "y": 296, "width": 276, "height": 30 },
+    { "type": "set_bounds", "layoutId": "0x21000046", "elementId": "0x100005BF", "x": 36, "y": 330, "width": 276, "height": 30 },
+    { "type": "set_bounds", "layoutId": "0x21000046", "elementId": "0x100005C4", "x": 36, "y": 364, "width": 276, "height": 30 },
+    { "type": "set_bounds", "layoutId": "0x21000046", "elementId": "0x100005E8", "x": 36, "y": 398, "width": 276, "height": 30 },
+    { "type": "set_bounds", "layoutId": "0x21000046", "elementId": "0x100005F1", "x": 36, "y": 432, "width": 276, "height": 30 },
+    { "type": "set_bounds", "layoutId": "0x21000046", "elementId": "0x100005C7", "x": 36, "y": 466, "width": 276, "height": 30 },
+    { "type": "set_bounds", "layoutId": "0x21000046", "elementId": "0x100005C8", "x": 36, "y": 500, "width": 276, "height": 30 },
+    { "type": "set_bounds", "layoutId": "0x21000046", "elementId": "0x100003C4", "x": 565, "y": 92, "width": 199, "height": 432 },
+
+    { "type": "set_bounds", "layoutId": "0x21000047", "elementId": "0x100003EC", "x": 28, "y": 88, "width": 530, "height": 42 },
+    { "type": "set_bounds", "layoutId": "0x21000047", "elementId": "0x100003D8", "x": 584, "y": 88, "width": 188, "height": 436 },
+    { "type": "set_bounds", "layoutId": "0x21000047", "elementId": "0x100003D9", "x": 28, "y": 146, "width": 232, "height": 32 },
+    { "type": "set_bounds", "layoutId": "0x21000047", "elementId": "0x100003DA", "x": 28, "y": 182, "width": 232, "height": 32 },
+    { "type": "set_bounds", "layoutId": "0x21000047", "elementId": "0x100003DB", "x": 28, "y": 218, "width": 232, "height": 32 },
+    { "type": "set_bounds", "layoutId": "0x21000047", "elementId": "0x100003DC", "x": 28, "y": 254, "width": 232, "height": 32 },
+    { "type": "set_bounds", "layoutId": "0x21000047", "elementId": "0x100003DD", "x": 28, "y": 290, "width": 232, "height": 32 },
+    { "type": "set_bounds", "layoutId": "0x21000047", "elementId": "0x100003DE", "x": 28, "y": 326, "width": 232, "height": 32 },
+    { "type": "set_bounds", "layoutId": "0x21000047", "elementId": "0x100003DF", "x": 28, "y": 362, "width": 232, "height": 32 },
+    { "type": "set_bounds", "layoutId": "0x21000047", "elementId": "0x100003E0", "x": 28, "y": 406, "width": 232, "height": 118 },
+    { "type": "set_bounds", "layoutId": "0x21000047", "elementId": "0x100003E1", "x": 282, "y": 198, "width": 288, "height": 264 },
+    { "type": "set_bounds", "layoutId": "0x21000047", "elementId": "0x100003E2", "x": 598, "y": 106, "width": 164, "height": 48 },
+    { "type": "set_bounds", "layoutId": "0x21000047", "elementId": "0x100003E3", "x": 598, "y": 184, "width": 164, "height": 30 },
+    { "type": "set_bounds", "layoutId": "0x21000047", "elementId": "0x100003E4", "x": 598, "y": 220, "width": 164, "height": 30 },
+    { "type": "set_bounds", "layoutId": "0x21000047", "elementId": "0x100003E5", "x": 598, "y": 256, "width": 164, "height": 30 },
+    { "type": "set_bounds", "layoutId": "0x21000047", "elementId": "0x100003E6", "x": 282, "y": 206, "width": 288, "height": 38 },
+    { "type": "set_bounds", "layoutId": "0x21000047", "elementId": "0x100003E7", "x": 282, "y": 248, "width": 288, "height": 38 },
+    { "type": "set_bounds", "layoutId": "0x21000047", "elementId": "0x100003E8", "x": 282, "y": 290, "width": 288, "height": 38 },
+    { "type": "set_bounds", "layoutId": "0x21000047", "elementId": "0x100003E9", "x": 282, "y": 332, "width": 288, "height": 38 },
+    { "type": "set_bounds", "layoutId": "0x21000047", "elementId": "0x100003EA", "x": 282, "y": 374, "width": 288, "height": 38 },
+    { "type": "set_bounds", "layoutId": "0x21000047", "elementId": "0x100003EB", "x": 282, "y": 416, "width": 288, "height": 38 },
+
+    { "type": "set_bounds", "layoutId": "0x21000048", "elementId": "0x100003F9", "x": 28, "y": 78, "width": 250, "height": 28 },
+    { "type": "set_bounds", "layoutId": "0x21000048", "elementId": "0x100003F6", "x": 28, "y": 110, "width": 420, "height": 284 },
+    { "type": "set_bounds", "layoutId": "0x21000048", "elementId": "0x100003F7", "x": 33, "y": 116, "width": 410, "height": 272 },
+    { "type": "set_bounds", "layoutId": "0x21000048", "elementId": "0x100003F8", "x": 452, "y": 116, "width": 32, "height": 272 },
+    { "type": "set_bounds", "layoutId": "0x21000048", "elementId": "0x100003FA", "x": 28, "y": 410, "width": 420, "height": 114 },
+    { "type": "set_bounds", "layoutId": "0x21000048", "elementId": "0x100003FB", "x": 33, "y": 416, "width": 410, "height": 102 },
+    { "type": "set_bounds", "layoutId": "0x21000048", "elementId": "0x100003FC", "x": 33, "y": 438, "width": 410, "height": 80 },
+    { "type": "set_bounds", "layoutId": "0x21000048", "elementId": "0x100003FD", "x": 500, "y": 96, "width": 276, "height": 428 },
+
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003A7", "x": 32, "y": 86, "width": 64, "height": 54 },
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003A8", "x": 104, "y": 86, "width": 64, "height": 54 },
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003A9", "x": 32, "y": 154, "width": 120, "height": 40 },
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003AA", "x": 160, "y": 154, "width": 120, "height": 40 },
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003AB", "x": 32, "y": 210, "width": 248, "height": 304 },
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003AC", "x": 292, "y": 76, "width": 236, "height": 238 },
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003AD", "x": 300, "y": 76, "width": 220, "height": 238 },
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003AE", "x": 0, "y": 0, "width": 220, "height": 238 },
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003AF", "x": 0, "y": 0, "width": 216, "height": 44 },
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003B0", "x": 0, "y": 48, "width": 216, "height": 44 },
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003B1", "x": 0, "y": 96, "width": 216, "height": 44 },
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003B2", "x": 0, "y": 144, "width": 216, "height": 44 },
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003B3", "x": 0, "y": 192, "width": 216, "height": 44 },
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003B4", "x": 0, "y": 0, "width": 220, "height": 192 },
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003B5", "x": 0, "y": 0, "width": 216, "height": 44 },
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003B6", "x": 0, "y": 48, "width": 216, "height": 44 },
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003B7", "x": 0, "y": 96, "width": 216, "height": 44 },
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003B8", "x": 0, "y": 144, "width": 216, "height": 44 },
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003B9", "x": 300, "y": 314, "width": 220, "height": 220 },
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003BA", "x": 548, "y": 76, "width": 228, "height": 384 },
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003BB", "x": 554, "y": 82, "width": 216, "height": 372 },
+    { "type": "set_bounds", "layoutId": "0x21000049", "elementId": "0x100003BC", "x": 576, "y": 468, "width": 168, "height": 74 },
+
+    { "type": "set_bounds", "layoutId": "0x2100004A", "elementId": "0x10000408", "x": 28, "y": 92, "width": 220, "height": 54 },
+    { "type": "set_bounds", "layoutId": "0x2100004A", "elementId": "0x10000409", "x": 28, "y": 154, "width": 240, "height": 364 },
+    { "type": "set_bounds", "layoutId": "0x2100004A", "elementId": "0x1000040A", "x": 292, "y": 92, "width": 472, "height": 426 },
+
+    { "type": "set_bounds", "layoutId": "0x2100004B", "elementId": "0x100003FF", "x": 28, "y": 94, "width": 242, "height": 420 },
+    { "type": "set_bounds", "layoutId": "0x2100004B", "elementId": "0x10000400", "x": 33, "y": 100, "width": 232, "height": 408 },
+    { "type": "set_bounds", "layoutId": "0x2100004B", "elementId": "0x10000401", "x": 276, "y": 94, "width": 32, "height": 420 },
+    { "type": "set_bounds", "layoutId": "0x2100004B", "elementId": "0x10000402", "x": 322, "y": 94, "width": 232, "height": 42 },
+    { "type": "set_bounds", "layoutId": "0x2100004B", "elementId": "0x10000403", "x": 336, "y": 148, "width": 100, "height": 26 },
+    { "type": "set_bounds", "layoutId": "0x2100004B", "elementId": "0x10000494", "x": 440, "y": 148, "width": 100, "height": 26 },
+    { "type": "set_bounds", "layoutId": "0x2100004B", "elementId": "0x10000404", "x": 322, "y": 182, "width": 232, "height": 332 },
+    { "type": "set_bounds", "layoutId": "0x2100004B", "elementId": "0x10000405", "x": 582, "y": 94, "width": 190, "height": 420 },
+    { "type": "set_bounds", "layoutId": "0x2100004B", "elementId": "0x10000406", "x": 588, "y": 100, "width": 178, "height": 408 }
+  ]
+}

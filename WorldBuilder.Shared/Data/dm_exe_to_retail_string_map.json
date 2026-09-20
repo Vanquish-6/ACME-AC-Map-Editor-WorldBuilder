@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "name": "pre_game_exe",
+  "defaultTableId": "0x23000002",
+  "notes": "DM CLIENT.EXE -> retail StringTable for pre-login shell copy that is not covered by the connection/login/disconnect map. Rows flagged as gap intentionally keep retail wording until a defensible DM source string is found.",
+  "entries": [
+    { "screen": "intro", "retailTableId": "0x23000002", "retailKey": 105320788, "gap": true, "notes": "Retail intro Quit Game button; no DM EXE Quit Game label found." },
+
+    { "screen": "credits", "retailTableId": "0x23000002", "retailKey": 184855186, "dmText": "Restore Character", "notes": "FUN_00524ac0 character-management button label." },
+    { "screen": "credits", "retailTableId": "0x23000002", "retailKey": 197392594, "dmText": "Delete Character", "notes": "FUN_00524ac0 character-management button label." },
+    { "screen": "credits", "retailTableId": "0x23000002", "retailKey": 42203378, "dmText": "Create Character", "notes": "FUN_00524ac0 character-management button label." },
+    { "screen": "credits", "retailTableId": "0x23000002", "retailKey": 189275445, "gap": true, "notes": "Retail ENTER button; no standalone DM EXE Enter label confirmed." },
+    { "screen": "credits", "retailTableId": "0x23000002", "retailKey": 198852211, "gap": true, "notes": "Retail CREDITS button; no DM EXE credits-button label confirmed." },
+    { "screen": "credits", "retailTableId": "0x23000002", "retailKey": 149740564, "dmText": "Exit", "notes": "Standalone DM EXE Exit label confirmed by direct PE xref scan." },
+
+    { "screen": "patch_notes", "retailTableId": "0x23000002", "retailKey": 20083534, "gap": true, "notes": "Retail-only patch-status row." },
+    { "screen": "patch_notes", "retailTableId": "0x23000002", "retailKey": 30457015, "gap": true, "notes": "Retail-only patch queue-status row." },
+    { "screen": "patch_notes", "retailTableId": "0x23000002", "retailKey": 31989477, "gap": true, "notes": "Retail-only patch completion row." },
+    { "screen": "patch_notes", "retailTableId": "0x23000002", "retailKey": 61383143, "gap": true, "notes": "Retail-only patch progress row." },
+
+    { "screen": "top_hud_chrome", "retailTableId": "0x23000001", "retailKey": 179227509, "dmText": "Chat", "notes": "Gameplay chat header label." },
+    { "screen": "top_hud_chrome", "retailTableId": "0x23000001", "retailKey": 79829758, "dmText": "Send", "notes": "Gameplay chat send-button label." },
+    { "screen": "top_hud_chrome", "retailTableId": "0x23000002", "retailKey": 48629556, "dmText": "Health", "notes": "Vitals label." },
+    { "screen": "top_hud_chrome", "retailTableId": "0x23000002", "retailKey": 216531156, "dmText": "Stamina", "notes": "Vitals label." },
+    { "screen": "top_hud_chrome", "retailTableId": "0x23000002", "retailKey": 143122564, "dmText": "Mana", "notes": "Vitals label." }
+  ]
+}

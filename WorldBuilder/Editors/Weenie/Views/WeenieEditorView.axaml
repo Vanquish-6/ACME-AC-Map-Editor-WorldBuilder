@@ -1,0 +1,348 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:WorldBuilder.Editors.Weenie"
+             xmlns:pv="using:WorldBuilder.Editors.Weenie.Views"
+             xmlns:shared="using:WorldBuilder.Views"
+             xmlns:conv="using:WorldBuilder.Lib.Converters"
+             d:DesignHeight="800" d:DesignWidth="1400"
+             mc:Ignorable="d"
+             x:Class="WorldBuilder.Editors.Weenie.Views.WeenieEditorView"
+             x:DataType="vm:WeenieEditorViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="TextBlock.section-header">
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#d8d0ec" />
+            <Setter Property="Margin" Value="0,10,0,4" />
+        </Style>
+        <Style Selector="TextBlock.field-label">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="#8a7a9e" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="MinWidth" Value="220" />
+        </Style>
+        <Style Selector="TextBox.prop-input">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="Padding" Value="6,4" />
+        </Style>
+        <Style Selector="Button.toolbar-btn">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#a89bbe" />
+        </Style>
+        <Style Selector="Button.toolbar-btn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#33ffffff" />
+            <Setter Property="Foreground" Value="#e0d8ef" />
+        </Style>
+        <Style Selector="Button.row-remove">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="4,0" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="Foreground" Value="#5a4a6e" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="MinWidth" Value="24" />
+            <Setter Property="MinHeight" Value="20" />
+        </Style>
+        <Style Selector="Button.row-remove:pointerover /template/ ContentPresenter">
+            <Setter Property="Foreground" Value="#d47474" />
+        </Style>
+    </UserControl.Styles>
+
+    <DockPanel>
+        <Border ZIndex="2" DockPanel.Dock="Top" Background="#120c22" BorderBrush="#2a1d42" BorderThickness="0,0,0,1" Padding="6,4">
+            <DockPanel>
+                <StackPanel Orientation="Horizontal" Spacing="6" DockPanel.Dock="Left">
+                    <Button Classes="toolbar-btn" Content="Search" Command="{Binding SearchWeeniesCommand}" />
+                    <Button Classes="toolbar-btn" Content="New" Command="{Binding CreateNewCommand}" Foreground="#74b0ec" />
+                    <Button Classes="primary" Content="{Binding SaveButtonText}" Command="{Binding SaveCommand}" />
+                    <Button Classes="toolbar-btn" Content="Revert" Command="{Binding RevertCommand}" IsVisible="{Binding !IsCreatingNew}" />
+                    <Button Classes="toolbar-btn" Content="Cancel" Command="{Binding CancelNewCommand}" IsVisible="{Binding IsCreatingNew}" Foreground="#d47474" />
+                    <Border Width="1" Background="#2a1d42" Margin="4,0" />
+                    <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" FontSize="12" Foreground="#a89bbe" TextWrapping="Wrap" MaxWidth="520" />
+                </StackPanel>
+                <TextBlock DockPanel.Dock="Right" VerticalAlignment="Center" FontSize="11" Foreground="#6a5a7e"
+                           Text="Emotes / spell book / create list are read-only counts; scalar tables are replaced on save." />
+            </DockPanel>
+        </Border>
+
+        <shared:EditorGuideBanner DockPanel.Dock="Top"
+                                  Margin="10,8,10,0"
+                                  Title="Weenies"
+                                  Body="Weenies are game objects — items, NPCs, portals, and more. Connect the world database in Settings, search, then pick one. Prefer a starter template instead of a blank weenie." />
+
+        <Grid>
+        <Grid ColumnDefinitions="300,4,*" Margin="0">
+            <DockPanel Grid.Column="0" Background="#1a1030">
+                <Border DockPanel.Dock="Top" Padding="8,8" BorderBrush="#2a1d42" BorderThickness="0,0,0,1">
+                    <StackPanel Spacing="6">
+                        <TextBox Text="{Binding SearchText}" Watermark="Name contains… (empty = first 2500)" FontSize="12" MinHeight="30" />
+                        <TextBlock Text="Uses the world database from Settings. List is capped for responsiveness." FontSize="10" Foreground="#6a5a7e" TextWrapping="Wrap" />
+                    </StackPanel>
+                </Border>
+                <ListBox ItemsSource="{Binding Weenies}" SelectedItem="{Binding SelectedWeenie}" Background="Transparent">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate DataType="vm:WeenieListEntryVm">
+                            <StackPanel Margin="6,4">
+                                <TextBlock Text="{Binding Name}" Foreground="#e8e0f8" FontSize="13" TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{Binding Subtitle}" Foreground="#7a6a92" FontSize="11" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+
+            <GridSplitter Grid.Column="1" Width="4" Background="Transparent" ResizeDirection="Columns" />
+
+            <Panel Grid.Column="2">
+            <Grid ColumnDefinitions="*,4,300" Background="#140e24" IsVisible="{Binding HasWeenieDetail}">
+                <TabControl Grid.Column="0" Margin="8,4,4,8" TabStripPlacement="Top">
+                    <TabItem Header="Summary">
+                        <ScrollViewer>
+                            <StackPanel Margin="12,8" Spacing="10">
+                                <TextBlock Classes="section-header" Text="Starter templates" />
+                                <TextBlock TextWrapping="Wrap" FontSize="11" Foreground="#8a7a9e"
+                                           Text="Lifestoned’s “templates” were MVC editor partials, not starter weenies. These are JSON starter kits. Add *.json under weenie-templates in your app data folder or project directory (same schema as built-in). Later files override the same id." />
+                                <ComboBox ItemsSource="{Binding WeenieTemplates}"
+                                          SelectedItem="{Binding SelectedTemplate}"
+                                          MinHeight="32" FontSize="12" HorizontalAlignment="Left" MinWidth="320">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate DataType="vm:WeenieTemplatePickerItem">
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Title}" Foreground="#e8e0f8" />
+                                                <TextBlock Text="{Binding Subtitle}" FontSize="10" Foreground="#7a6a92" TextWrapping="Wrap" MaxWidth="400" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Classes="toolbar-btn" Content="Merge template" Command="{Binding ApplyTemplateMergeCommand}" />
+                                    <Button Classes="toolbar-btn" Content="Replace all scalars" Command="{Binding ApplyTemplateReplaceScalarsCommand}" Foreground="#d4a574" />
+                                </StackPanel>
+                                <TextBlock Classes="section-header" Text="Identity" />
+                                <StackPanel Orientation="Horizontal" Spacing="8" IsVisible="{Binding IsCreatingNew}">
+                                    <TextBlock Classes="field-label" Text="Class name" />
+                                    <TextBox Text="{Binding NewClassName}" Width="280" Classes="prop-input" Watermark="e.g. my-custom-sword (required)" />
+                                </StackPanel>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Classes="field-label" Text="Weenie type" />
+                                    <TextBox Text="{Binding WeenieTypeText}" Width="120" Classes="prop-input" />
+                                    <TextBlock Text="{Binding WeenieTypeHint}" VerticalAlignment="Center" FontSize="12" Foreground="#b0a0c8" />
+                                </StackPanel>
+                                <TextBlock Text="{Binding ComplexSummary}" FontSize="11" Foreground="#9a8ab8" TextWrapping="Wrap" />
+                                <TextBlock Text="Drag in the preview panel to orbit; scroll wheel zooms." FontSize="11" Foreground="#6a5a7e" />
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+                    <TabItem Header="{Binding IntRows.Count, StringFormat='Ints ({0})'}">
+                        <DockPanel>
+                            <Border DockPanel.Dock="Bottom" Padding="8,6" BorderBrush="#2a1d42" BorderThickness="0,1,0,0">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <ComboBox ItemsSource="{x:Static vm:WeenieEditorViewModel.AllIntTypes}" SelectedItem="{Binding SelectedNewInt}" MinWidth="260" FontSize="12" MinHeight="28" />
+                                    <Button Classes="toolbar-btn" Content="+ Add" Command="{Binding AddIntPropertyCommand}" />
+                                </StackPanel>
+                            </Border>
+                            <ScrollViewer>
+                                <ItemsControl Margin="8" ItemsSource="{Binding IntRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="vm:WeenieIntRow">
+                                            <Grid ColumnDefinitions="220,*,60,24" Margin="0,2">
+                                                <TextBlock Grid.Column="0" Text="{Binding Label}" Classes="field-label" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding RowDescription}" />
+                                                <TextBox Grid.Column="1" Text="{Binding ValueText}" Classes="prop-input" />
+                                                <TextBlock Grid.Column="2" Text="{Binding PropertyType, StringFormat='id {0}'}" FontSize="10" Foreground="#5a4a6e" VerticalAlignment="Center" Margin="8,0,0,0" ToolTip.Tip="{Binding RowDescription}" />
+                                                <Button Grid.Column="3" Classes="row-remove" Content="&#xd7;" Command="{Binding $parent[UserControl].DataContext.RemoveIntRowCommand}" CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </DockPanel>
+                    </TabItem>
+                    <TabItem Header="{Binding Int64Rows.Count, StringFormat='Int64 ({0})'}">
+                        <DockPanel>
+                            <Border DockPanel.Dock="Bottom" Padding="8,6" BorderBrush="#2a1d42" BorderThickness="0,1,0,0">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <ComboBox ItemsSource="{x:Static vm:WeenieEditorViewModel.AllInt64Types}" SelectedItem="{Binding SelectedNewInt64}" MinWidth="260" FontSize="12" MinHeight="28" />
+                                    <Button Classes="toolbar-btn" Content="+ Add" Command="{Binding AddInt64PropertyCommand}" />
+                                </StackPanel>
+                            </Border>
+                            <ScrollViewer>
+                                <ItemsControl Margin="8" ItemsSource="{Binding Int64Rows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="vm:WeenieInt64Row">
+                                            <Grid ColumnDefinitions="220,*,24" Margin="0,2">
+                                                <TextBlock Grid.Column="0" Text="{Binding Label}" Classes="field-label" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding RowDescription}" />
+                                                <TextBox Grid.Column="1" Text="{Binding ValueText}" Classes="prop-input" />
+                                                <Button Grid.Column="2" Classes="row-remove" Content="&#xd7;" Command="{Binding $parent[UserControl].DataContext.RemoveInt64RowCommand}" CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </DockPanel>
+                    </TabItem>
+                    <TabItem Header="{Binding BoolRows.Count, StringFormat='Bool ({0})'}">
+                        <DockPanel>
+                            <Border DockPanel.Dock="Bottom" Padding="8,6" BorderBrush="#2a1d42" BorderThickness="0,1,0,0">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <ComboBox ItemsSource="{x:Static vm:WeenieEditorViewModel.AllBoolTypes}" SelectedItem="{Binding SelectedNewBool}" MinWidth="260" FontSize="12" MinHeight="28" />
+                                    <Button Classes="toolbar-btn" Content="+ Add" Command="{Binding AddBoolPropertyCommand}" />
+                                </StackPanel>
+                            </Border>
+                            <ScrollViewer>
+                                <ItemsControl Margin="8" ItemsSource="{Binding BoolRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="vm:WeenieBoolRow">
+                                            <Grid ColumnDefinitions="220,*,24" Margin="0,4">
+                                                <TextBlock Grid.Column="0" Text="{Binding Label}" Classes="field-label" ToolTip.Tip="{Binding RowDescription}" />
+                                                <CheckBox Grid.Column="1" IsChecked="{Binding Value}" VerticalAlignment="Center" />
+                                                <Button Grid.Column="2" Classes="row-remove" Content="&#xd7;" Command="{Binding $parent[UserControl].DataContext.RemoveBoolRowCommand}" CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </DockPanel>
+                    </TabItem>
+                    <TabItem Header="{Binding FloatRows.Count, StringFormat='Float ({0})'}">
+                        <DockPanel>
+                            <Border DockPanel.Dock="Bottom" Padding="8,6" BorderBrush="#2a1d42" BorderThickness="0,1,0,0">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <ComboBox ItemsSource="{x:Static vm:WeenieEditorViewModel.AllFloatTypes}" SelectedItem="{Binding SelectedNewFloat}" MinWidth="260" FontSize="12" MinHeight="28" />
+                                    <Button Classes="toolbar-btn" Content="+ Add" Command="{Binding AddFloatPropertyCommand}" />
+                                </StackPanel>
+                            </Border>
+                            <ScrollViewer>
+                                <ItemsControl Margin="8" ItemsSource="{Binding FloatRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="vm:WeenieFloatRow">
+                                            <Grid ColumnDefinitions="220,*,24" Margin="0,2">
+                                                <TextBlock Grid.Column="0" Text="{Binding Label}" Classes="field-label" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding RowDescription}" />
+                                                <TextBox Grid.Column="1" Text="{Binding ValueText}" Classes="prop-input" />
+                                                <Button Grid.Column="2" Classes="row-remove" Content="&#xd7;" Command="{Binding $parent[UserControl].DataContext.RemoveFloatRowCommand}" CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </DockPanel>
+                    </TabItem>
+                    <TabItem Header="{Binding StringRows.Count, StringFormat='String ({0})'}">
+                        <DockPanel>
+                            <Border DockPanel.Dock="Bottom" Padding="8,6" BorderBrush="#2a1d42" BorderThickness="0,1,0,0">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <ComboBox ItemsSource="{x:Static vm:WeenieEditorViewModel.AllStringTypes}" SelectedItem="{Binding SelectedNewString}" MinWidth="260" FontSize="12" MinHeight="28" />
+                                    <Button Classes="toolbar-btn" Content="+ Add" Command="{Binding AddStringPropertyCommand}" />
+                                </StackPanel>
+                            </Border>
+                            <ScrollViewer>
+                                <ItemsControl Margin="8" ItemsSource="{Binding StringRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="vm:WeenieStringRow">
+                                            <StackPanel Margin="0,6">
+                                                <DockPanel>
+                                                    <Button DockPanel.Dock="Right" Classes="row-remove" Content="&#xd7;" Command="{Binding $parent[UserControl].DataContext.RemoveStringRowCommand}" CommandParameter="{Binding}" />
+                                                    <TextBlock Text="{Binding Label}" Classes="field-label" ToolTip.Tip="{Binding RowDescription}" />
+                                                </DockPanel>
+                                                <TextBox Text="{Binding ValueText}" Classes="prop-input" AcceptsReturn="True" MinHeight="48" TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </DockPanel>
+                    </TabItem>
+                    <TabItem Header="{Binding DidRows.Count, StringFormat='DID ({0})'}">
+                        <DockPanel>
+                            <Border DockPanel.Dock="Bottom" Padding="8,6" BorderBrush="#2a1d42" BorderThickness="0,1,0,0">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <ComboBox ItemsSource="{x:Static vm:WeenieEditorViewModel.AllDidTypes}" SelectedItem="{Binding SelectedNewDid}" MinWidth="260" FontSize="12" MinHeight="28" />
+                                    <Button Classes="toolbar-btn" Content="+ Add" Command="{Binding AddDidPropertyCommand}" />
+                                </StackPanel>
+                            </Border>
+                            <ScrollViewer>
+                                <ItemsControl Margin="8" ItemsSource="{Binding DidRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="vm:WeenieDidRow">
+                                            <Grid ColumnDefinitions="220,*,24" Margin="0,2">
+                                                <TextBlock Grid.Column="0" Text="{Binding Label}" Classes="field-label" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding RowDescription}" />
+                                                <TextBox Grid.Column="1" Text="{Binding ValueText}" Classes="prop-input" FontFamily="Consolas,Courier New,monospace" />
+                                                <Button Grid.Column="2" Classes="row-remove" Content="&#xd7;" Command="{Binding $parent[UserControl].DataContext.RemoveDidRowCommand}" CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </DockPanel>
+                    </TabItem>
+                    <TabItem Header="{Binding IidRows.Count, StringFormat='IID ({0})'}">
+                        <DockPanel>
+                            <Border DockPanel.Dock="Bottom" Padding="8,6" BorderBrush="#2a1d42" BorderThickness="0,1,0,0">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <ComboBox ItemsSource="{x:Static vm:WeenieEditorViewModel.AllIidTypes}" SelectedItem="{Binding SelectedNewIid}" MinWidth="260" FontSize="12" MinHeight="28" />
+                                    <Button Classes="toolbar-btn" Content="+ Add" Command="{Binding AddIidPropertyCommand}" />
+                                </StackPanel>
+                            </Border>
+                            <ScrollViewer>
+                                <ItemsControl Margin="8" ItemsSource="{Binding IidRows}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="vm:WeenieIidRow">
+                                            <Grid ColumnDefinitions="220,*,24" Margin="0,2">
+                                                <TextBlock Grid.Column="0" Text="{Binding Label}" Classes="field-label" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding RowDescription}" />
+                                                <TextBox Grid.Column="1" Text="{Binding ValueText}" Classes="prop-input" FontFamily="Consolas,Courier New,monospace" />
+                                                <Button Grid.Column="2" Classes="row-remove" Content="&#xd7;" Command="{Binding $parent[UserControl].DataContext.RemoveIidRowCommand}" CommandParameter="{Binding}" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </DockPanel>
+                    </TabItem>
+                </TabControl>
+
+                <GridSplitter Grid.Column="1" Width="4" Background="Transparent" ResizeDirection="Columns" />
+
+                <DockPanel Grid.Column="2" Margin="4,8,8,8">
+                    <Border DockPanel.Dock="Top" Background="#1a1030" CornerRadius="6" Padding="8" BorderBrush="#2a1d42" BorderThickness="1" Margin="0,0,0,8">
+                        <StackPanel Spacing="6" HorizontalAlignment="Center">
+                            <TextBlock Text="Icon (PropertyDataId.Icon)" FontSize="11" Foreground="#8a7a9e" HorizontalAlignment="Center" />
+                            <Border Width="72" Height="72" Background="#221840" CornerRadius="4" BorderBrush="#2a1d42" BorderThickness="1" HorizontalAlignment="Center">
+                                <Image Source="{Binding IconBitmap}" Width="72" Height="72" Stretch="Uniform" />
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                    <Border Background="#0d0a14" CornerRadius="6" BorderBrush="#2a1d42" BorderThickness="1" ClipToBounds="True">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Top" Text="Setup model (PropertyDataId.Setup)" FontSize="11" Foreground="#8a7a9e" Margin="8,6" />
+                            <pv:WeenieSetupPreviewView MinHeight="280" SetupDid="{Binding PreviewSetupDid}" />
+                        </DockPanel>
+                    </Border>
+                </DockPanel>
+            </Grid>
+            <Border Classes="empty-state"
+                    IsVisible="{Binding HasWeenieDetail, Converter={x:Static conv:BoolConverters.Not}}">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Pick a weenie"
+                               FontSize="18"
+                               FontWeight="SemiBold"
+                               Foreground="#d8d0ec"
+                               HorizontalAlignment="Center" />
+                    <TextBlock Classes="hint"
+                               TextAlignment="Center"
+                               Text="Search on the left, or click New and apply a starter template. Weenies need a world database connection in Settings." />
+                </StackPanel>
+            </Border>
+            </Panel>
+        </Grid>
+        <Border ZIndex="10" IsVisible="{Binding IsBusy}" Background="#AA000000" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+            <TextBlock Text="Loading…" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="White" FontSize="16" />
+        </Border>
+        </Grid>
+    </DockPanel>
+</UserControl>

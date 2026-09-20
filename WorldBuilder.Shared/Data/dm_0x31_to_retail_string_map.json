@@ -1,0 +1,33 @@
+{
+  "version": 2,
+  "defaultTableId": "0x23000002",
+  "notes": "Char-create DM portal 0x31 -> retail StringTable. Prefer retailStringId (compute_str_hash); retailKey when known; searchContains as fallback. Entries marked retailOnly keep retail wording — DM had separate screens with no retail LayoutDesc slot (Phase 3 layout work).",
+  "entries": [
+    { "dmId": "0x31000001", "retailStringId": "ID_CharGen_AluvianText" },
+    { "dmId": "0x31000002", "retailStringId": "ID_CharGen_GaruText" },
+    { "dmId": "0x31000003", "retailStringId": "ID_CharGen_ShoText" },
+    { "dmId": "0x31000004", "retailStringId": "ID_CharGen_SoldierText" },
+    { "dmId": "0x31000005", "retailStringId": "ID_CharGen_BowText" },
+    { "dmId": "0x31000006", "retailStringId": "ID_CharGen_SwashText" },
+    { "dmId": "0x31000007", "skip": true, "notes": "retailOnly: DM Enchanter profession — no retail char-gen profession slot" },
+    { "dmId": "0x31000008", "retailStringId": "ID_CharGen_LifeText" },
+    { "dmId": "0x31000009", "retailStringId": "ID_CharGen_WarText" },
+    { "dmId": "0x3100000A", "retailStringId": "ID_CharGen_WayText" },
+    { "dmId": "0x3100000B", "retailStringId": "ID_CharGen_CustomText" },
+    { "dmId": "0x3100000C", "retailKey": 81885939 },
+    { "dmId": "0x3100000D", "retailKey": 176258307 },
+    { "dmId": "0x3100000E", "retailKey": 125066675 },
+    { "dmId": "0x3100000F", "retailKey": 46519635 },
+    { "dmId": "0x31000010", "retailKey": 147994899 },
+    { "dmId": "0x31000011", "retailKey": 258775315 },
+    { "dmId": "0x31000013", "retailKey": 43066563, "notes": "Retail merged appearance/clothing; DM had separate screens" },
+    { "dmId": "0x31000014", "skip": true, "notes": "retailOnly: DM clothing screen — merged into retail Appearance tab (0x31000013); Phase 3 layout" },
+    { "dmId": "0x31000015", "skip": true, "notes": "retailOnly: DM heraldry screen — not in retail char-gen flow; Phase 3 layout" },
+    { "dmId": "0x31000016", "searchContains": "Strength measures your character" },
+    { "dmId": "0x31000017", "retailKey": 24143443 },
+    { "dmId": "0x31000018", "skip": true, "notes": "retailOnly: DM placeholder screen" },
+    { "dmId": "0x31000019", "searchContains": "Naming conventions" },
+    { "dmId": "0x3100001F", "skip": true, "notes": "retailOnly: DM sex-selection help — retail binds gender text inside appearance row" },
+    { "dmId": "0x31000020", "skip": true, "notes": "retailOnly: DM credits roll — use retail credits layout/strings" }
+  ]
+}

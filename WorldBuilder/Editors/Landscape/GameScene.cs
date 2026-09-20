@@ -1,0 +1,2724 @@
+using Acme.Render;
+using Acme.Render.Vertex;
+using Acme.Render.GL;
+using Acme.Dat;
+using Silk.NET.OpenGL;
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Numerics;
+using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
+using WorldBuilder.Lib;
+using WorldBuilder.Lib.Settings;
+using WorldBuilder.Rendering;
+using WorldBuilder.Shared.Documents;
+using WorldBuilder.Shared.Lib;
+using WorldBuilder.Shared.Models;
+
+namespace WorldBuilder.Editors.Landscape {
+    public class GameScene : IDisposable {
+        private const float PerspectiveProximityThreshold = 500f;
+        private const int MaxLoadedLandblocks = 200;
+        private const float SceneryDistanceThreshold = 600f;
+        private const float DungeonDistanceThreshold = 400f;
+        private const int MaxBatchSize = 30;
+
+        // Clone/Stamp tool preview (PR #9)
+        private PreviewMeshData? _currentStampPreview;
+        private bool _previewDirty;
+        private float _previewOpacity = 0.5f;
+
+        private WorldBuilderSettings _settings => _terrainSystem.Settings;
+
+        // Per-context state management
+        private readonly ConcurrentDictionary<OpenGLRenderer, SceneContext> _contexts = new();
+        private readonly TextureDiskCache _textureCache;
+
+        private ThumbnailRenderService? _thumbnailService;
+        public ThumbnailRenderService? ThumbnailService => _thumbnailService;
+        private IDatReaderWriter _dats => _terrainSystem.Dats;
+        private DocumentManager _documentManager => _terrainSystem.DocumentManager;
+        private TerrainDocument _terrainDoc => _terrainSystem.TerrainDoc;
+        private Region _region => _terrainSystem.Region;
+
+        public TerrainDataManager DataManager { get; }
+        public LandSurfaceManager SurfaceManager { get; }
+
+        public PerspectiveCamera PerspectiveCamera { get; private set; }
+        public OrthographicTopDownCamera TopDownCamera { get; private set; }
+        public CameraManager CameraManager { get; private set; }
+
+        private readonly Dictionary<ushort, List<StaticObject>> _sceneryObjects = new();
+        private readonly Dictionary<ushort, List<StaticObject>> _dungeonStaticObjects = new();
+        private readonly Dictionary<ushort, List<StaticObject>> _buildingStaticObjects = new();
+        private readonly ConcurrentDictionary<ushort, List<StaticObject>> _weenieSpawnObjects = new();
+        private readonly ConcurrentQueue<(uint Id, bool IsSetup)> _pendingModelWarmup = new();
+        private DateTime _lastSpawnDiag = DateTime.MinValue;
+        private readonly Dictionary<ushort, List<uint>> _dungeonStaticParentCells = new();
+        private readonly Dictionary<ushort, List<uint>> _buildingStaticParentCells = new();
+
+        /// <summary>
+        /// Rendered representations of Project.OutdoorInstancePlacements.
+        /// Each entry is (placementIndex, staticObject) where placementIndex maps back to
+        /// Project.OutdoorInstancePlacements for picking and deletion.
+        /// </summary>
+        private List<(int PlacementIndex, StaticObject Obj)> _outdoorInstanceRenderObjects = new();
+
+        internal readonly TerrainSystem _terrainSystem;
+
+        private const float WarmUpTimeBudgetMs = 12f;
+        private const int MaxIntegratePerFrame = 8;
+        private const int MaxUnloadsPerFrame = 2;
+        private const int MaxGpuUploadsPerFrame = 4;
+        private const float DocUpdateDistanceThresholdBase = 96f;
+        private Vector3 _lastDocUpdatePosition = new(float.MinValue);
+        private float _lastOrthoSize = -1f;
+        private List<StaticObject>? _cachedStaticObjects;
+        private List<StaticObject>? _cachedNonDungeonStatics;
+        private List<StaticObject>? _cachedDungeonStatics;
+        private bool _staticObjectsDirty = true;
+        private bool _cachedShowStaticObjects = true;
+        private bool _cachedShowScenery = true;
+        private bool _cachedShowDungeons = true;
+        private bool _cachedShowBuildingInteriors = false;
+        private bool _cachedShowWeenieSpawns = false;
+        private ushort? _cachedFocusedDungeonLB = null;
+        private uint _lastCameraCellId;
+        private int _lastVisibleCellCount = -1;
+        private int _lastVisibleCellHash;
+
+        // Reusable collections
+        private readonly Dictionary<(uint Id, bool IsSetup), List<Matrix4x4>> _objectGroupBuffer = new();
+        private readonly List<Matrix4x4> _tempInstanceTransforms = new();
+        private readonly List<StaticObject> _visibleObjectsBuffer = new();
+        private readonly List<Matrix4x4> _visibleTransformsBuffer = new();
+
+        private readonly Dictionary<(ushort LbKey, int Index), AcParticleEmitterSimulator> _particleEmitters = new();
+        private readonly List<Matrix4x4> _particleInstanceScratch = new();
+        private readonly List<StaticObject> _particleDrawObjects = new();
+        private readonly List<Matrix4x4> _particleDrawTransforms = new();
+        private double _lastParticleWallSeconds = -1;
+
+        private struct BatchDrawEntry {
+            public uint VAO;
+            public List<RenderBatch> Batches;
+            public int InstanceCount;
+            public int BufferFloatOffset;
+        }
+        private readonly List<BatchDrawEntry> _batchDrawPlan = new();
+
+        // Background loading
+        private Task? _modelPrepTask;
+        private const int MaxChunkUploadsPerFrame = 4;
+        private readonly ConcurrentQueue<(TerrainChunk chunk, SceneContext context)> _chunkGenQueue = new();
+        private Task? _chunkGenTask;
+        private Task? _backgroundLoadTask;
+        private readonly ConcurrentQueue<BackgroundLoadResult> _backgroundLoadResults = new();
+        private readonly HashSet<ushort> _pendingLoadLandblocks = new();
+        private readonly HashSet<ushort> _pendingSceneryRegen = new();
+        private Task? _envCellRetryTask;
+        private readonly HashSet<ushort> _pendingEnvCellRetries = new();
+        // Preview cells computed from blueprints without DAT writes, keyed by landblock.
+        // Set by PreviewBuildingInterior(); drained by RetryMissingEnvCells() on the next tick.
+        private readonly ConcurrentDictionary<ushort, List<EnvCell>> _pendingPreviewCells = new();
+        private HashSet<ushort>? _lastVisibleLandblocks;
+
+        public HashSet<ushort>? VisibleLandblocks => _lastVisibleLandblocks;
+
+        // Expose object manager for tools (uses any available context)
+        public StaticObjectManager? AnyObjectManager => _contexts.Values.FirstOrDefault()?.ObjectManager;
+        internal EnvCellManager? _envCellManager => _contexts.Values.FirstOrDefault()?.EnvCellManager;
+        internal TransformGizmo? _gizmo => _contexts.Values.FirstOrDefault()?.Gizmo;
+
+        private record BackgroundLoadResult(ushort LbKey, string DocId, List<StaticObject> Scenery, HashSet<(uint Id, bool IsSetup)> UniqueObjectIds, long LoadMs, long SceneryMs, int SceneryCount, PreparedEnvCellBatch? EnvCellBatch = null);
+
+        private bool _disposed = false;
+        private volatile bool _clearingCaches = false;
+        private float _aspectRatio;
+
+        // Rendering properties
+        public float AmbientLightIntensity {
+            get => _settings.Landscape.Rendering.LightIntensity;
+            set => _settings.Landscape.Rendering.LightIntensity = value;
+        }
+
+        public bool ShowGrid {
+            get => _settings.Landscape.Grid.ShowGrid;
+            set => _settings.Landscape.Grid.ShowGrid = value;
+        }
+
+        public Vector3 LandblockGridColor {
+            get => _settings.Landscape.Grid.LandblockColor;
+            set => _settings.Landscape.Grid.LandblockColor = value;
+        }
+
+        public Vector3 CellGridColor {
+            get => _settings.Landscape.Grid.CellColor;
+            set => _settings.Landscape.Grid.CellColor = value;
+        }
+
+        public float GridLineWidth {
+            get => _settings.Landscape.Grid.LineWidth;
+            set => _settings.Landscape.Grid.LineWidth = value;
+        }
+
+        public float GridOpacity {
+            get => _settings.Landscape.Grid.Opacity;
+            set => _settings.Landscape.Grid.Opacity = value;
+        }
+
+        public Vector3 SphereColor {
+            get => _settings.Landscape.Selection.SphereColor;
+            set => _settings.Landscape.Selection.SphereColor = value;
+        }
+
+        public float SphereRadius {
+            get => _settings.Landscape.Selection.SphereRadius;
+            set => _settings.Landscape.Selection.SphereRadius = value;
+        }
+
+        public bool ShowStaticObjects {
+            get => _settings.Landscape.Overlay.ShowStaticObjects;
+            set => _settings.Landscape.Overlay.ShowStaticObjects = value;
+        }
+
+        public bool ShowScenery {
+            get => _settings.Landscape.Overlay.ShowScenery;
+            set => _settings.Landscape.Overlay.ShowScenery = value;
+        }
+
+        public bool ShowDungeons {
+            get => _settings.Landscape.Overlay.ShowDungeons;
+            set => _settings.Landscape.Overlay.ShowDungeons = value;
+        }
+
+        public bool ShowBuildingInteriors {
+            get => _settings.Landscape.Overlay.ShowBuildingInteriors;
+            set => _settings.Landscape.Overlay.ShowBuildingInteriors = value;
+        }
+
+        public bool ShowWeenieSpawns {
+            get => _settings.Landscape.Overlay.ShowWeenieSpawns;
+            set => _settings.Landscape.Overlay.ShowWeenieSpawns = value;
+        }
+
+        public bool ShowParticles {
+            get => _settings.Landscape.Overlay.ShowParticles;
+            set => _settings.Landscape.Overlay.ShowParticles = value;
+        }
+
+        public bool ShowSlopeHighlight {
+            get => _settings.Landscape.Overlay.ShowSlopeHighlight;
+            set => _settings.Landscape.Overlay.ShowSlopeHighlight = value;
+        }
+
+        public float SlopeThreshold {
+            get => _settings.Landscape.Overlay.SlopeThreshold;
+            set => _settings.Landscape.Overlay.SlopeThreshold = value;
+        }
+
+        public Vector3 SlopeHighlightColor {
+            get => _settings.Landscape.Overlay.SlopeHighlightColor;
+            set => _settings.Landscape.Overlay.SlopeHighlightColor = value;
+        }
+
+        public float SlopeHighlightOpacity {
+            get => _settings.Landscape.Overlay.SlopeHighlightOpacity;
+            set => _settings.Landscape.Overlay.SlopeHighlightOpacity = value;
+        }
+
+        public float SphereHeightOffset { get; set; } = 0.0f;
+        public Vector3 LightDirection { get; set; } = new Vector3(0.5f, 0.3f, -0.3f);
+        public float SpecularPower { get; set; } = 32.0f;
+
+        // Sky and atmosphere
+        public Vector3 SkyZenithColor { get; set; } = new Vector3(0.13f, 0.28f, 0.72f);
+        public Vector3 SkyHorizonColor { get; set; } = new Vector3(0.55f, 0.73f, 0.90f);
+
+        // Distance fog (fades terrain and objects toward the horizon color)
+        public bool FogEnabled { get; set; } = true;
+        public float FogStart { get; set; } = 800f;
+        public float FogEnd { get; set; } = 3200f;
+        public Vector3 SphereGlowColor { get; set; } = new(0);
+        public float SphereGlowIntensity { get; set; } = 1.0f;
+        public float SphereGlowPower { get; set; } = 0.5f;
+
+        // Performance stats (updated per frame per viewport)
+        public int LastDrawCalls { get; private set; }
+        public int LastTriangleCount { get; private set; }
+        public int LastObjectCount { get; private set; }
+
+        private readonly Stopwatch _frameTimer = new();
+        private float _selectionTime;
+
+        public GameScene(TerrainSystem terrainSystem) {
+            _terrainSystem = terrainSystem;
+            var mapCenter = new Vector3(192f * 254f / 2f, 192f * 254f / 2f, 1000);
+            PerspectiveCamera = new PerspectiveCamera(mapCenter, _settings);
+            TopDownCamera = new OrthographicTopDownCamera(mapCenter, _settings);
+
+            var camSettings = _settings.Landscape.Camera;
+            if (camSettings.HasSavedPosition) {
+                var savedPos = new Vector3(camSettings.SavedPositionX, camSettings.SavedPositionY, camSettings.SavedPositionZ);
+                PerspectiveCamera.SetPosition(savedPos);
+                if (!float.IsNaN(camSettings.SavedYaw) && !float.IsNaN(camSettings.SavedPitch)) {
+                    PerspectiveCamera.SetYawPitch(camSettings.SavedYaw, camSettings.SavedPitch);
+                }
+                TopDownCamera.SetPosition(savedPos);
+                if (!float.IsNaN(camSettings.SavedOrthoSize)) {
+                    TopDownCamera.OrthographicSize = camSettings.SavedOrthoSize;
+                }
+            }
+
+            CameraManager = new CameraManager(camSettings.SavedIs3D ? PerspectiveCamera : TopDownCamera);
+
+            DataManager = new TerrainDataManager(terrainSystem, 16);
+            SurfaceManager = new LandSurfaceManager(_dats, _region);
+
+            var textureCacheDir = System.IO.Path.Combine(
+                System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData),
+                "ACME WorldBuilder", "TextureCache", _dats.CacheNamespace);
+            _textureCache = new TextureDiskCache(textureCacheDir);
+        }
+
+        public static string GetEmbeddedResource(string filename, Assembly assembly) {
+            using (Stream stream = assembly.GetManifestResourceStream(filename))
+            using (StreamReader reader = new StreamReader(stream)) {
+                return reader.ReadToEnd();
+            }
+        }
+
+        public void AddStaticObject(string landblockId, StaticObject obj) {
+            var doc = _documentManager.GetOrCreateDocumentAsync(landblockId, typeof(LandblockDocument)).GetAwaiter()
+                .GetResult();
+            if (doc is LandblockDocument lbDoc) {
+                lbDoc.Apply(new StaticObjectUpdateEvent(obj, true));
+            }
+        }
+
+        public void RemoveStaticObject(string landblockId, StaticObject obj) {
+            var doc = _documentManager.GetOrCreateDocumentAsync(landblockId, typeof(LandblockDocument)).GetAwaiter()
+                .GetResult();
+            if (doc is LandblockDocument lbDoc) {
+                lbDoc.Apply(new StaticObjectUpdateEvent(obj, false));
+            }
+        }
+
+        public void Update(Vector3 cameraPosition, Matrix4x4 viewProjectionMatrix) {
+            if (_clearingCaches) return;
+
+            var sw = Stopwatch.StartNew();
+
+            var frustum = new Frustum(viewProjectionMatrix);
+            var requiredChunks = DataManager.GetRequiredChunks(cameraPosition);
+
+            IntegrateBackgroundLoadResults();
+            DrainPendingModelWarmup();
+            RetryMissingEnvCells(cameraPosition);
+            ProcessPendingSceneryRegen();
+
+            float docUpdateThreshold = DocUpdateDistanceThresholdBase;
+            bool zoomChanged = false;
+            if (CameraManager?.Current is OrthographicTopDownCamera ortho) {
+                if (ortho.OrthographicSize > 1800f) {
+                    docUpdateThreshold = Math.Max(48f, DocUpdateDistanceThresholdBase * (1800f / ortho.OrthographicSize));
+                }
+                if (_lastOrthoSize > 0 && MathF.Abs(ortho.OrthographicSize - _lastOrthoSize) / _lastOrthoSize > 0.1f) {
+                    zoomChanged = true;
+                }
+                _lastOrthoSize = ortho.OrthographicSize;
+            }
+            float distMoved = Vector3.Distance(cameraPosition, _lastDocUpdatePosition);
+            if (distMoved >= docUpdateThreshold || zoomChanged || _lastDocUpdatePosition.X == float.MinValue) {
+                _lastDocUpdatePosition = cameraPosition;
+                KickOffBackgroundLoads(cameraPosition);
+                UnloadOutOfRangeLandblocks(cameraPosition);
+                UnloadDistantDungeons(cameraPosition);
+                UnloadDistantChunks(cameraPosition);
+                RefreshSceneryForNearbyLandblocks(cameraPosition);
+                ProcessPendingSceneryRegen();
+            }
+
+            long staticMs = sw.ElapsedMilliseconds;
+
+            // Collect dirty chunks first to update all contexts before clearing dirty flags
+            var dirtyChunks = new HashSet<TerrainChunk>();
+
+            foreach (var context in _contexts.Values) {
+                foreach (var chunkId in requiredChunks) {
+                    var chunkX = (uint)(chunkId >> 32);
+                    var chunkY = (uint)(chunkId & 0xFFFFFFFF);
+                    var chunk = DataManager.GetOrCreateChunk(chunkX, chunkY);
+
+                    if (!context.GPUManager.HasRenderData(chunkId)) {
+                        QueueChunkForGeneration(chunk, context);
+                    }
+                    else if (chunk.IsDirty) {
+                        dirtyChunks.Add(chunk);
+                        // Pass clearDirty: false to preserve the flag for other contexts
+                        context.GPUManager.UpdateLandblocks(chunk, chunk.DirtyLandblocks, _terrainSystem, clearDirty: false);
+                    }
+                }
+            }
+
+            // Now clear dirty flags after all contexts have been updated
+            foreach (var chunk in dirtyChunks) {
+                chunk.ClearDirty();
+            }
+
+            long totalMs = sw.ElapsedMilliseconds;
+            if (totalMs > 200) {
+                Console.WriteLine($"[GameScene.Update] {totalMs}ms total (statics: {staticMs}ms, terrain: {totalMs - staticMs}ms)");
+            }
+        }
+
+        private void ProcessPendingUploads(SceneContext context) {
+            WarmUpRenderData(context);
+            context.EnvCellManager.ProcessUploads(maxPerFrame: 4);
+            ProcessChunkUploads(context);
+        }
+
+        private void IntegrateBackgroundLoadResults() {
+            int integrated = 0;
+            while (integrated < MaxIntegratePerFrame && _backgroundLoadResults.TryDequeue(out var result)) {
+                // Only overwrite scenery when the result carries scenery data
+                // (retry results for missing EnvCells have empty scenery lists).
+                if (result.Scenery.Count > 0 || !_sceneryObjects.ContainsKey(result.LbKey)) {
+                    _sceneryObjects[result.LbKey] = result.Scenery;
+                }
+                _pendingLoadLandblocks.Remove(result.LbKey);
+                _pendingEnvCellRetries.Remove(result.LbKey);
+
+                foreach (var (id, isSetup) in result.UniqueObjectIds) {
+                    foreach (var context in _contexts.Values) {
+                        if (context.ObjectManager.TryGetCachedRenderData(id) == null && !context.ObjectManager.IsKnownFailure(id)) {
+                            context.ModelWarmupQueue.Enqueue((id, isSetup));
+                        }
+                    }
+                }
+
+                if (result.EnvCellBatch != null) {
+                    foreach (var context in _contexts.Values) {
+                        context.EnvCellManager.QueueForUpload(result.EnvCellBatch);
+                    }
+
+                    // Add dungeon static objects (only shown when dungeon is focused)
+                    if (result.EnvCellBatch.DungeonStaticObjects.Count > 0) {
+                        _dungeonStaticObjects[result.LbKey] = result.EnvCellBatch.DungeonStaticObjects;
+                        _dungeonStaticParentCells[result.LbKey] = result.EnvCellBatch.DungeonStaticParentCells;
+                        foreach (var context in _contexts.Values) {
+                            foreach (var obj in result.EnvCellBatch.DungeonStaticObjects) {
+                                if (context.ObjectManager.TryGetCachedRenderData(obj.Id) == null && !context.ObjectManager.IsKnownFailure(obj.Id)) {
+                                    context.ModelWarmupQueue.Enqueue((obj.Id, obj.IsSetup));
+                                }
+                            }
+                        }
+                    }
+
+                    // Add building interior static objects (always shown with regular statics)
+                    if (result.EnvCellBatch.BuildingStaticObjects.Count > 0) {
+                        _buildingStaticObjects[result.LbKey] = result.EnvCellBatch.BuildingStaticObjects;
+                        _buildingStaticParentCells[result.LbKey] = result.EnvCellBatch.BuildingStaticParentCells;
+                        foreach (var context in _contexts.Values) {
+                            foreach (var obj in result.EnvCellBatch.BuildingStaticObjects) {
+                                if (context.ObjectManager.TryGetCachedRenderData(obj.Id) == null && !context.ObjectManager.IsKnownFailure(obj.Id)) {
+                                    context.ModelWarmupQueue.Enqueue((obj.Id, obj.IsSetup));
+                                }
+                            }
+                        }
+                    }
+                }
+
+                _staticObjectsDirty = true;
+                integrated++;
+                LandblockIntegrated?.Invoke(result.LbKey);
+            }
+        }
+
+        private void DrainPendingModelWarmup() {
+            if (_pendingModelWarmup.IsEmpty) return;
+            int queued = 0;
+            int alreadyCached = 0;
+            int failed = 0;
+            while (_pendingModelWarmup.TryDequeue(out var item)) {
+                foreach (var context in _contexts.Values) {
+                    if (context.ObjectManager.TryGetCachedRenderData(item.Id) != null) {
+                        alreadyCached++;
+                    }
+                    else if (context.ObjectManager.IsKnownFailure(item.Id)) {
+                        failed++;
+                    }
+                    else {
+                        context.ModelWarmupQueue.Enqueue(item);
+                        queued++;
+                    }
+                }
+            }
+            if (queued > 0 || failed > 0)
+                Console.WriteLine($"[Spawns] DrainWarmup: {queued} queued, {alreadyCached} already cached, {failed} known failures, {_contexts.Count} context(s)");
+        }
+
+        /// <summary>
+        /// Picks up landblocks that were loaded before the render context existed and
+        /// therefore had their EnvCell preparation skipped. Runs at most one retry
+        /// task at a time and only while there are missing cells.
+        /// </summary>
+        private void RetryMissingEnvCells(Vector3 cameraPosition) {
+            if (_envCellRetryTask != null && !_envCellRetryTask.IsCompleted) return;
+            // Allow the retry when there are pending preview cells even if SkipDatStatics is set
+            if (_documentManager.SkipDatStatics && _pendingPreviewCells.IsEmpty) return;
+
+            var envCellManager = _contexts.Values.FirstOrDefault()?.EnvCellManager;
+            if (envCellManager == null) return;
+
+            var dungeonThreshold = GetEffectiveDungeonThreshold();
+            var camPos2D = new Vector2(cameraPosition.X, cameraPosition.Y);
+
+            var missing = new List<ushort>();
+            foreach (var docId in _documentManager.ActiveDocs.Keys) {
+                if (!docId.StartsWith("landblock_")) continue;
+                var lbKey = ushort.Parse(docId.Replace("landblock_", ""), System.Globalization.NumberStyles.HexNumber);
+                if (envCellManager.HasLoadedCells(lbKey)) continue;
+                if (_pendingEnvCellRetries.Contains(lbKey)) continue;
+
+                // Always include landblocks with pending preview cells regardless of distance
+                if (_pendingPreviewCells.ContainsKey(lbKey)) {
+                    missing.Add(lbKey);
+                    continue;
+                }
+
+                float dist = Vector2.Distance(camPos2D, LandblockCenter(lbKey));
+                if (dist <= dungeonThreshold) {
+                    missing.Add(lbKey);
+                }
+            }
+
+            if (missing.Count == 0) return;
+
+            foreach (var lbKey in missing)
+                _pendingEnvCellRetries.Add(lbKey);
+
+            var dats = _dats;
+            var resultQueue = _backgroundLoadResults;
+            var contexts = _contexts;
+            var pendingPreview = _pendingPreviewCells;
+            var skipDatStatics = _documentManager.SkipDatStatics;
+
+            _envCellRetryTask = Task.Run(() => {
+                var mgr = contexts.Values.FirstOrDefault()?.EnvCellManager;
+                if (mgr == null) return;
+
+                foreach (var lbKey in missing) {
+                    if (mgr.HasLoadedCells(lbKey)) continue;
+                    try {
+                        // Preview cells take priority — no DAT reads needed
+                        if (pendingPreview.TryRemove(lbKey, out var previewCells)) {
+                            var batch = mgr.PrepareLandblockEnvCells(lbKey, (uint)lbKey, previewCells, isDungeonOnly: false);
+                            if (batch != null) {
+                                var docId = $"landblock_{lbKey:X4}";
+                                resultQueue.Enqueue(new BackgroundLoadResult(lbKey, docId, new List<StaticObject>(), new HashSet<(uint, bool)>(), 0, 0, 0, batch));
+                            }
+                            continue;
+                        }
+
+                        if (skipDatStatics) continue;
+
+                        uint lbId = (uint)lbKey;
+                        uint infoId = lbId << 16 | 0xFFFE;
+                        if (!dats.TryGet<LandBlockInfo>(infoId, out var lbi) || lbi.NumCells == 0) continue;
+
+                        var envCells = new List<EnvCell>();
+                        for (uint c = 0x0100; c < 0x0100 + lbi.NumCells; c++) {
+                            uint cellId = (lbId << 16) | c;
+                            if (dats.TryGet<EnvCell>(cellId, out var envCell)) {
+                                envCells.Add(envCell);
+                            }
+                        }
+                        if (envCells.Count == 0) continue;
+
+                        bool isDungeonOnly = lbi.Buildings == null || lbi.Buildings.Count == 0;
+                        var buildingCellIds = CollectLbiBuildingCellIds(lbi, dats, lbId);
+                        var batch2 = mgr.PrepareLandblockEnvCells(lbKey, lbId, envCells, isDungeonOnly, buildingCellIds);
+                        if (batch2 != null) {
+                            var docId = $"landblock_{lbKey:X4}";
+                            resultQueue.Enqueue(new BackgroundLoadResult(lbKey, docId, new List<StaticObject>(), new HashSet<(uint, bool)>(), 0, 0, 0, batch2));
+                        }
+                    }
+                    catch (Exception ex) {
+                        Console.WriteLine($"[EnvCellRetry] Error for LB 0x{lbKey:X4}: {ex.Message}");
+                    }
+                }
+            });
+        }
+
+        private void KickOffBackgroundLoads(Vector3 cameraPosition) {
+            if (_backgroundLoadTask != null && !_backgroundLoadTask.IsCompleted) return;
+
+            var visibleLandblocks = GetProximateLandblocks(cameraPosition);
+            _lastVisibleLandblocks = visibleLandblocks;
+            var currentLoaded = _documentManager.ActiveDocs.Keys.Where(k => k.StartsWith("landblock_")).ToHashSet();
+
+            var toLoad = visibleLandblocks
+                .Where(lbKey => !currentLoaded.Contains($"landblock_{lbKey:X4}") && !_pendingLoadLandblocks.Contains(lbKey))
+                .ToList();
+
+            if (toLoad.Count == 0) return;
+
+            var camPos2D = new Vector2(cameraPosition.X, cameraPosition.Y);
+            toLoad.Sort((a, b) => {
+                                        // Dungeon-only landblocks have cells but no buildings.
+                                        // Building interiors have cells AND buildings on the surface.
+                float distA = Vector2.Distance(camPos2D, LandblockCenter(a));
+                float distB = Vector2.Distance(camPos2D, LandblockCenter(b));
+                return distA.CompareTo(distB);
+            });
+
+            if (toLoad.Count > MaxBatchSize) {
+                toLoad = toLoad.Take(MaxBatchSize).ToList();
+            }
+
+            foreach (var lbKey in toLoad) {
+                _pendingLoadLandblocks.Add(lbKey);
+            }
+
+            var documentManager = _documentManager;
+            var terrainSystem = _terrainSystem;
+            var region = _region;
+            var dats = _dats;
+            var resultQueue = _backgroundLoadResults;
+            var sceneryThreshold = GetEffectiveSceneryThreshold();
+            var dungeonThreshold = GetEffectiveDungeonThreshold();
+            var camPosCapture = cameraPosition;
+            // Resolve lazily inside the task — _contexts may be empty on
+            // the first frame because Render() hasn't created a context yet.
+            var contexts = _contexts;
+
+            _backgroundLoadTask = Task.Run(() => {
+                var batchSw = Stopwatch.StartNew();
+                int loaded = 0;
+                EnvCellManager? envCellManager = null;
+
+                foreach (var lbKey in toLoad) {
+                    var docId = $"landblock_{lbKey:X4}";
+                    try {
+                        var loadSw = Stopwatch.StartNew();
+                        var doc = documentManager.GetOrCreateDocumentAsync<LandblockDocument>(docId).GetAwaiter().GetResult();
+                        long loadMs = loadSw.ElapsedMilliseconds;
+
+                        if (doc != null) {
+                            var lbCenter2D = LandblockCenter(lbKey);
+                            float distFromCamera = Vector2.Distance(
+                                new Vector2(camPosCapture.X, camPosCapture.Y), lbCenter2D);
+
+                            List<StaticObject> scenery;
+                            long sceneryMs = 0;
+                            if (distFromCamera <= sceneryThreshold) {
+                                var scenerySw = Stopwatch.StartNew();
+                                scenery = GenerateSceneryThreadSafe(lbKey, doc, terrainSystem, region, dats);
+                                sceneryMs = scenerySw.ElapsedMilliseconds;
+                            }
+                            else {
+                                scenery = new List<StaticObject>();
+                            }
+
+                            var uniqueIds = new HashSet<(uint, bool)>();
+                            foreach (var obj in doc.GetStaticObjects()) {
+                                AddWarmupIdsForStaticObject(dats, obj, uniqueIds);
+                            }
+                            foreach (var obj in scenery) {
+                                AddWarmupIdsForStaticObject(dats, obj, uniqueIds);
+                            }
+
+                            PreparedEnvCellBatch? envCellBatch = null;
+                            // Resolve EnvCellManager lazily — on the first batch it may not
+                            // exist yet until the GL thread creates a render context.
+                            envCellManager ??= contexts.Values.FirstOrDefault()?.EnvCellManager;
+                            if (!documentManager.SkipDatStatics && envCellManager != null && distFromCamera <= dungeonThreshold && !envCellManager.HasLoadedCells(lbKey)) {
+                                uint lbId = (uint)lbKey;
+                                uint infoId = lbId << 16 | 0xFFFE;
+                                if (dats.TryGet<LandBlockInfo>(infoId, out var lbi) && lbi.NumCells > 0) {
+                                    var envCells = new List<EnvCell>();
+                                    for (uint c = 0x0100; c < 0x0100 + lbi.NumCells; c++) {
+                                        uint cellId = (lbId << 16) | c;
+                                        if (dats.TryGet<EnvCell>(cellId, out var envCell)) {
+                                            envCells.Add(envCell);
+                                        }
+                                    }
+                                    if (envCells.Count > 0) {
+                                        bool isDungeonOnly = lbi.Buildings == null || lbi.Buildings.Count == 0;
+                                        var buildingCellIds = CollectLbiBuildingCellIds(lbi, dats, lbId);
+                                        envCellBatch = envCellManager.PrepareLandblockEnvCells(lbKey, lbId, envCells, isDungeonOnly, buildingCellIds);
+                                    }
+                                }
+                            }
+
+                            resultQueue.Enqueue(new BackgroundLoadResult(lbKey, docId, scenery, uniqueIds, loadMs, sceneryMs, scenery.Count, envCellBatch));
+                            loaded++;
+                        }
+                    }
+                    catch (Exception ex) {
+                        Console.WriteLine($"[Statics] Error loading {docId} on background thread: {ex.Message}");
+                        resultQueue.Enqueue(new BackgroundLoadResult(lbKey, docId, new List<StaticObject>(), new HashSet<(uint, bool)>(), 0, 0, 0));
+                    }
+                }
+            });
+        }
+
+        private static HashSet<ushort>? CollectLbiBuildingCellIds(LandBlockInfo lbi, IDatReaderWriter dats, uint lbId) {
+            if (lbi.Buildings == null || lbi.Buildings.Count == 0) {
+                return null;
+            }
+
+            var ids = new HashSet<ushort>(LandblockDocument.GetCellToBuildingMap(lbi, dats, lbId).Keys);
+            return ids.Count > 0 ? ids : null;
+        }
+
+        private static Vector2 LandblockCenter(ushort lbKey) {
+            int lbX = (lbKey >> 8) & 0xFF;
+            int lbY = lbKey & 0xFF;
+            return new Vector2(
+                lbX * TerrainDataManager.LandblockLength + TerrainDataManager.LandblockLength / 2f,
+                lbY * TerrainDataManager.LandblockLength + TerrainDataManager.LandblockLength / 2f);
+        }
+
+        private void UnloadOutOfRangeLandblocks(Vector3 cameraPosition) {
+            // Check both cameras to prevent one camera unloading what the other needs
+            var keepLoadedSet = GetUnloadBoundaryLandblocks(PerspectiveCamera.Position);
+            keepLoadedSet.UnionWith(GetUnloadBoundaryLandblocks(TopDownCamera.Position));
+
+            var currentLoaded = _documentManager.ActiveDocs.Keys.Where(k => k.StartsWith("landblock_")).ToHashSet();
+
+            var toUnload = currentLoaded
+                .Where(docId => !keepLoadedSet.Contains(ushort.Parse(docId.Replace("landblock_", ""), System.Globalization.NumberStyles.HexNumber)))
+                .Take(MaxUnloadsPerFrame)
+                .ToList();
+
+            foreach (var docId in toUnload) {
+                try {
+                    var sw = Stopwatch.StartNew();
+                    var lbKey = ushort.Parse(docId.Replace("landblock_", ""), System.Globalization.NumberStyles.HexNumber);
+                    if (_sceneryObjects.TryGetValue(lbKey, out var scenery)) {
+                        foreach (var obj in scenery) {
+                            foreach (var context in _contexts.Values) {
+                                context.ObjectManager.ReleaseRenderData(obj.Id, obj.IsSetup);
+                            }
+                        }
+                        _sceneryObjects.Remove(lbKey);
+                    }
+
+                    if (_documentManager.ActiveDocs.TryGetValue(docId, out var baseDoc) && baseDoc is LandblockDocument lbDoc) {
+                        foreach (var obj in lbDoc.GetStaticObjects()) {
+                            foreach (var context in _contexts.Values) {
+                                if (obj.IsParticleEmitter) {
+                                    if (TryGetParticleGfxId(_dats, obj.Id, out var pg))
+                                        context.ObjectManager.ReleaseRenderData(pg, false);
+                                }
+                                else {
+                                    context.ObjectManager.ReleaseRenderData(obj.Id, obj.IsSetup);
+                                }
+                            }
+                        }
+                    }
+
+                    var rm = new List<(ushort, int)>();
+                    foreach (var k in _particleEmitters.Keys) {
+                        if (k.LbKey == lbKey) rm.Add(k);
+                    }
+                    foreach (var k in rm) _particleEmitters.Remove(k);
+
+                    foreach (var context in _contexts.Values) {
+                        context.EnvCellManager.UnloadLandblock(lbKey);
+                    }
+                    _pendingPreviewCells.TryRemove(lbKey, out _);
+
+                    if (_dungeonStaticObjects.TryGetValue(lbKey, out var dungeonObjs)) {
+                        foreach (var obj in dungeonObjs) {
+                            foreach (var context in _contexts.Values) {
+                                context.ObjectManager.ReleaseRenderData(obj.Id, obj.IsSetup);
+                            }
+                        }
+                        _dungeonStaticObjects.Remove(lbKey);
+                        _dungeonStaticParentCells.Remove(lbKey);
+                    }
+                    if (_buildingStaticObjects.TryGetValue(lbKey, out var buildingObjs)) {
+                        foreach (var obj in buildingObjs) {
+                            foreach (var context in _contexts.Values) {
+                                context.ObjectManager.ReleaseRenderData(obj.Id, obj.IsSetup);
+                            }
+                        }
+                        _buildingStaticObjects.Remove(lbKey);
+                        _buildingStaticParentCells.Remove(lbKey);
+                    }
+                    if (_weenieSpawnObjects.TryRemove(lbKey, out var weenieObjs)) {
+                        foreach (var obj in weenieObjs) {
+                            foreach (var context in _contexts.Values) {
+                                context.ObjectManager.ReleaseRenderData(obj.Id, obj.IsSetup);
+                            }
+                        }
+                    }
+
+                    _ = _documentManager.CloseDocumentAsync(docId);
+                    _staticObjectsDirty = true;
+                }
+                catch (Exception ex) {
+                    Console.WriteLine($"[Statics] Error unloading {docId}: {ex.Message}");
+                }
+            }
+
+            if (toUnload.Count >= MaxUnloadsPerFrame) {
+                _lastDocUpdatePosition = new Vector3(float.MinValue);
+            }
+        }
+
+        private void UnloadDistantDungeons(Vector3 cameraPosition) {
+            float unloadThreshold = DungeonDistanceThreshold * 1.5f;
+
+            var pCamPos2D = new Vector2(PerspectiveCamera.Position.X, PerspectiveCamera.Position.Y);
+            var tCamPos2D = new Vector2(TopDownCamera.Position.X, TopDownCamera.Position.Y);
+
+            var manager = _contexts.Values.FirstOrDefault()?.EnvCellManager;
+            if (manager == null) return;
+
+            var toUnload = new List<ushort>();
+            foreach (var lbKey in manager.GetLoadedLandblockKeys()) {
+                var center = LandblockCenter(lbKey);
+                float distP = Vector2.Distance(pCamPos2D, center);
+                float distT = Vector2.Distance(tCamPos2D, center);
+
+                // Only unload if distant from BOTH cameras
+                if (distP > unloadThreshold && distT > unloadThreshold) {
+                    toUnload.Add(lbKey);
+                }
+            }
+
+            foreach (var lbKey in toUnload) {
+                foreach (var context in _contexts.Values) {
+                    context.EnvCellManager.UnloadLandblock(lbKey);
+                }
+                _pendingPreviewCells.TryRemove(lbKey, out _);
+
+                if (_dungeonStaticObjects.TryGetValue(lbKey, out var dungeonObjs)) {
+                    foreach (var obj in dungeonObjs) {
+                        foreach (var context in _contexts.Values) {
+                            context.ObjectManager.ReleaseRenderData(obj.Id, obj.IsSetup);
+                        }
+                    }
+                    _dungeonStaticObjects.Remove(lbKey);
+                    _dungeonStaticParentCells.Remove(lbKey);
+                }
+                if (_buildingStaticObjects.TryGetValue(lbKey, out var buildingObjs2)) {
+                    foreach (var obj in buildingObjs2) {
+                        foreach (var context in _contexts.Values) {
+                            context.ObjectManager.ReleaseRenderData(obj.Id, obj.IsSetup);
+                        }
+                    }
+                    _buildingStaticObjects.Remove(lbKey);
+                    _buildingStaticParentCells.Remove(lbKey);
+                }
+                _weenieSpawnObjects.TryRemove(lbKey, out _);
+                _staticObjectsDirty = true;
+            }
+        }
+
+        private void UnloadDistantChunks(Vector3 cameraPosition) {
+            // Get chunks to unload based on Perspective camera
+            var chunksToUnloadP = DataManager.GetChunksToUnload(PerspectiveCamera.Position);
+
+            // Filter out chunks that are still needed by TopDown camera
+            var camChunkX = (int)(TopDownCamera.Position.X / DataManager.Metrics.WorldSize);
+            var camChunkY = (int)(TopDownCamera.Position.Y / DataManager.Metrics.WorldSize);
+            var unloadRange = DataManager.UnloadRange;
+
+            var finalUnloadList = new List<ulong>();
+            foreach (var chunkId in chunksToUnloadP) {
+                var chunk = DataManager.GetChunk(chunkId);
+                if (chunk == null) continue;
+
+                int dx = Math.Abs((int)chunk.ChunkX - camChunkX);
+                int dy = Math.Abs((int)chunk.ChunkY - camChunkY);
+
+                // If also distant from TopDown camera, then unload
+                if (dx > unloadRange || dy > unloadRange) {
+                    finalUnloadList.Add(chunkId);
+                }
+            }
+
+            foreach (var chunkId in finalUnloadList) {
+                foreach (var context in _contexts.Values) {
+                    context.ChunksInFlight.Remove(chunkId);
+                    context.GPUManager.DisposeChunkResources(chunkId);
+                }
+                DataManager.RemoveChunk(chunkId);
+            }
+        }
+
+        private void QueueChunkForGeneration(TerrainChunk chunk, SceneContext context) {
+            var chunkId = chunk.GetChunkId();
+            if (context.ChunksInFlight.Contains(chunkId) || context.GPUManager.HasRenderData(chunkId)) return;
+
+            context.ChunksInFlight.Add(chunkId);
+            _chunkGenQueue.Enqueue((chunk, context));
+
+            if (_chunkGenTask == null || _chunkGenTask.IsCompleted) {
+                var terrainSystem = _terrainSystem;
+                _chunkGenTask = Task.Run(() => ProcessChunkGenQueue(terrainSystem));
+            }
+        }
+
+        private void ProcessChunkGenQueue(TerrainSystem terrainSystem) {
+            while (_chunkGenQueue.TryDequeue(out var item)) {
+                var (chunk, context) = item;
+                var chunkId = chunk.GetChunkId();
+                try {
+                    var prepared = TerrainGPUResourceManager.PrepareChunkGeometry(chunk, terrainSystem);
+                    context.ChunkUploadQueue.Enqueue(prepared);
+                }
+                catch (Exception ex) {
+                    Console.WriteLine($"[Terrain] Background chunk gen error for ({chunk.ChunkX},{chunk.ChunkY}): {ex.Message}");
+                    context.ChunksInFlight.Remove(chunkId);
+                }
+            }
+        }
+
+        private void ProcessChunkUploads(SceneContext context) {
+            int uploaded = 0;
+            while (uploaded < MaxChunkUploadsPerFrame && context.ChunkUploadQueue.TryDequeue(out var prepared)) {
+                try {
+                    context.GPUManager.UploadChunkToGPU(prepared);
+                    uploaded++;
+                }
+                catch (Exception ex) {
+                    Console.WriteLine($"[Terrain] Chunk upload error: {ex.Message}");
+                }
+            }
+        }
+
+        private void WarmUpRenderData(SceneContext context) {
+            UploadPreparedModels(context);
+            KickOffModelPreparation(context);
+        }
+
+        private void UploadPreparedModels(SceneContext context) {
+            if (context.ModelUploadQueue.IsEmpty) return;
+
+            var sw = Stopwatch.StartNew();
+            int uploaded = 0;
+
+            while (uploaded < MaxGpuUploadsPerFrame && context.ModelUploadQueue.TryDequeue(out var prepared)) {
+                if (sw.ElapsedMilliseconds >= WarmUpTimeBudgetMs && uploaded > 0) {
+                    var temp = new List<PreparedModelData> { prepared };
+                    while (context.ModelUploadQueue.TryDequeue(out var remaining)) temp.Add(remaining);
+                    foreach (var item in temp) context.ModelUploadQueue.Enqueue(item);
+                    break;
+                }
+
+                if (context.ObjectManager.TryGetCachedRenderData(prepared.Id) != null) {
+                    context.ModelsPreparing.Remove(prepared.Id);
+                    continue;
+                }
+
+                try {
+                    var data = context.ObjectManager.FinalizeGpuUpload(prepared);
+                    uploaded++;
+
+                    if (data != null && data.IsSetup && data.SetupParts != null) {
+                        foreach (var (partId, _) in data.SetupParts) {
+                            if (context.ObjectManager.TryGetCachedRenderData(partId) == null &&
+                                !context.ObjectManager.IsKnownFailure(partId) &&
+                                !context.ModelsPreparing.Contains(partId)) {
+                                context.ModelWarmupQueue.Enqueue((partId, false));
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex) {
+                    Console.WriteLine($"[Statics] GPU upload error for 0x{prepared.Id:X8}: {ex.Message}");
+                }
+                finally {
+                    context.ModelsPreparing.Remove(prepared.Id);
+                }
+            }
+        }
+
+        private void KickOffModelPreparation(SceneContext context) {
+            if (context.ModelWarmupQueue.Count == 0) return;
+            // Use global _modelPrepTask to avoid thread explosion, but handle per-context queues?
+            // Actually, we can run one task per context batch.
+            // Or shared task.
+            if (_modelPrepTask != null && !_modelPrepTask.IsCompleted) return;
+
+            var batch = new List<(uint Id, bool IsSetup)>();
+            while (context.ModelWarmupQueue.Count > 0 && batch.Count < 16) {
+                var (id, isSetup) = context.ModelWarmupQueue.Dequeue();
+                if (context.ObjectManager.TryGetCachedRenderData(id) != null || context.ModelsPreparing.Contains(id)) continue;
+                context.ModelsPreparing.Add(id);
+                batch.Add((id, isSetup));
+            }
+
+            if (batch.Count == 0) return;
+
+            Console.WriteLine($"[Spawns] KickOffModelPrep: preparing {batch.Count} models ({string.Join(",", batch.Select(b => $"0x{b.Id:X8}"))})");
+
+            var objectManager = context.ObjectManager;
+            var resultQueue = context.ModelUploadQueue;
+
+            _modelPrepTask = Task.Run(() => {
+                int ok = 0, fail = 0;
+                foreach (var (id, isSetup) in batch) {
+                    try {
+                        var data = objectManager.PrepareModelData(id, isSetup);
+                        if (data != null) {
+                            resultQueue.Enqueue(data);
+                            ok++;
+                        }
+                        else {
+                            fail++;
+                            Console.WriteLine($"[Spawns] PrepareModelData returned null for 0x{id:X8} (isSetup={isSetup})");
+                        }
+                    }
+                    catch (Exception ex) {
+                        fail++;
+                        Console.WriteLine($"[Statics] Background prep error for 0x{id:X8}: {ex.Message}");
+                    }
+                }
+                Console.WriteLine($"[Spawns] ModelPrep batch done: {ok} ok, {fail} failed");
+            });
+        }
+
+        /// <summary>
+        /// Regenerates scenery for modified landblocks on a background thread.
+        /// </summary>
+        private void ProcessPendingSceneryRegen() {
+            if (_pendingSceneryRegen.Count == 0) return;
+            if (_backgroundLoadTask != null && !_backgroundLoadTask.IsCompleted) return;
+
+            var toRegen = _pendingSceneryRegen.ToList();
+            _pendingSceneryRegen.Clear();
+
+            foreach (var lbKey in toRegen) {
+                _pendingLoadLandblocks.Add(lbKey);
+            }
+
+            var documentManager = _documentManager;
+            var terrainSystem = _terrainSystem;
+            var region = _region;
+            var dats = _dats;
+            var resultQueue = _backgroundLoadResults;
+
+            _backgroundLoadTask = Task.Run(() => {
+                foreach (var lbKey in toRegen) {
+                    var docId = $"landblock_{lbKey:X4}";
+                    try {
+                        var doc = documentManager.GetOrCreateDocumentAsync<LandblockDocument>(docId).GetAwaiter().GetResult();
+                        if (doc != null) {
+                            var sw = Stopwatch.StartNew();
+                            var scenery = GenerateSceneryThreadSafe(lbKey, doc, terrainSystem, region, dats);
+                            long sceneryMs = sw.ElapsedMilliseconds;
+
+                            var uniqueIds = new HashSet<(uint, bool)>();
+                            foreach (var obj in doc.GetStaticObjects()) AddWarmupIdsForStaticObject(dats, obj, uniqueIds);
+                            foreach (var obj in scenery) uniqueIds.Add((obj.Id, obj.IsSetup));
+
+                            resultQueue.Enqueue(new BackgroundLoadResult(lbKey, docId, scenery, uniqueIds, 0, sceneryMs, scenery.Count));
+                        }
+                    }
+                    catch (Exception ex) {
+                        Console.WriteLine($"[Statics] Error regenerating scenery for {docId}: {ex.Message}");
+                        resultQueue.Enqueue(new BackgroundLoadResult(lbKey, docId, new List<StaticObject>(), new HashSet<(uint, bool)>(), 0, 0, 0));
+                    }
+                }
+            });
+        }
+
+        private static List<StaticObject> GenerateSceneryThreadSafe(
+            ushort lbKey, LandblockDocument lbDoc,
+            TerrainSystem terrainSystem, Region region, IDatReaderWriter dats) {
+
+            var scenery = new List<StaticObject>();
+            var lbId = (uint)lbKey;
+            var lbTerrainEntries = terrainSystem.GetLandblockTerrain(lbKey);
+            if (lbTerrainEntries == null) return scenery;
+
+            var buildings = new HashSet<int>();
+            var lbGlobalX = (lbId >> 8) & 0xFF;
+            var lbGlobalY = lbId & 0xFF;
+
+            foreach (var b in lbDoc.GetStaticObjects()) {
+                if (b.IsParticleEmitter) continue;
+                var localX = b.Origin.X - lbGlobalX * 192f;
+                var localY = b.Origin.Y - lbGlobalY * 192f;
+                var cellX = (int)MathF.Floor(localX / 24f);
+                var cellY = (int)MathF.Floor(localY / 24f);
+                if (cellX >= 0 && cellX < 8 && cellY >= 0 && cellY < 8) {
+                    buildings.Add(cellX * 9 + cellY);
+                }
+            }
+
+            var blockCellX = (int)lbGlobalX * 8;
+            var blockCellY = (int)lbGlobalY * 8;
+
+            for (int i = 0; i < lbTerrainEntries.Length; i++) {
+                var entry = lbTerrainEntries[i];
+                var terrainType = entry.Type;
+                var sceneType = entry.Scenery;
+
+                if (terrainType >= region.TerrainInfo.TerrainTypes.Count) continue;
+
+                var terrainInfo = region.TerrainInfo.TerrainTypes[(int)terrainType];
+                if (sceneType >= terrainInfo.SceneTypes.Count) continue;
+
+                var sceneInfoIdx = terrainInfo.SceneTypes[(int)sceneType];
+                if (sceneInfoIdx >= region.SceneInfo.SceneTypes.Count) continue;
+
+                var sceneInfo = region.SceneInfo.SceneTypes[(int)sceneInfoIdx];
+
+                if (sceneInfo.Scenes.Count == 0) continue;
+
+                var cellX = i / 9;
+                var cellY = i % 9;
+                var globalCellX = (uint)(blockCellX + cellX);
+                var globalCellY = (uint)(blockCellY + cellY);
+
+                var cellMat = globalCellY * (712977289u * globalCellX + 1813693831u) - 1109124029u * globalCellX + 2139937281u;
+                var offset = cellMat * 2.3283064e-10f;
+                var sceneIdx = (int)(sceneInfo.Scenes.Count * offset);
+                sceneIdx = Math.Clamp(sceneIdx, 0, sceneInfo.Scenes.Count - 1);
+                var sceneId = sceneInfo.Scenes[sceneIdx];
+
+                if (!dats.TryGet<Scene>(sceneId, out var scene) || scene.Objects.Count == 0) continue;
+                if (entry.Road != 0) continue;
+                if (buildings.Contains(i)) continue;
+
+                var cellXMat = -1109124029 * (int)globalCellX;
+                var cellYMat = 1813693831 * (int)globalCellY;
+                var cellMat2 = 1360117743 * globalCellX * globalCellY + 1888038839;
+
+                for (uint j = 0; j < scene.Objects.Count; j++) {
+                    var obj = scene.Objects[(int)j];
+                    if (obj.ObjectId == 0) continue;
+
+                    var noise = (uint)(cellXMat + cellYMat - cellMat2 * (23399 + j)) * 2.3283064e-10f;
+                    if (noise >= obj.Frequency) continue;
+
+                    var localPos = SceneryHelpers.Displace(obj, globalCellX, globalCellY, j);
+                    var lx = cellX * 24f + localPos.X;
+                    var ly = cellY * 24f + localPos.Y;
+
+                    if (lx < 0 || ly < 0 || lx >= 192f || ly >= 192f) continue;
+                    if (TerrainGeometryGenerator.OnRoad(new Vector3(lx, ly, 0), lbTerrainEntries)) continue;
+
+                    var lbOffset = new Vector3(lx, ly, 0);
+                    var z = TerrainGeometryGenerator.GetHeight(region, lbTerrainEntries, lbGlobalX, lbGlobalY, lbOffset);
+                    localPos.Z = z;
+                    lbOffset.Z = z;
+
+                    var normal = TerrainGeometryGenerator.GetNormal(region, lbTerrainEntries, lbGlobalX, lbGlobalY, lbOffset);
+                    if (!SceneryHelpers.CheckSlope(obj, normal.Z)) continue;
+
+                    Quaternion quat = obj.Align != 0
+                        ? SceneryHelpers.ObjAlign(obj, normal, z, localPos)
+                        : SceneryHelpers.RotateObj(obj, globalCellX, globalCellY, j, localPos);
+
+                    var scaleVal = SceneryHelpers.ScaleObj(obj, globalCellX, globalCellY, j);
+                    var scale = new Vector3(scaleVal);
+
+                    var blockX = (lbId >> 8) & 0xFF;
+                    var blockY = lbId & 0xFF;
+                    var worldOrigin = new Vector3(blockX * 192f + lx, blockY * 192f + ly, z);
+
+                    scenery.Add(new StaticObject {
+                        Id = obj.ObjectId,
+                        Origin = worldOrigin,
+                        Orientation = quat,
+                        IsSetup = (obj.ObjectId & 0x02000000) != 0,
+                        Scale = scale
+                    });
+                }
+            }
+
+            return scenery;
+        }
+
+        private HashSet<ushort> GetProximateLandblocks(Vector3 cameraPosition) {
+            var currentCamera = CameraManager?.Current;
+
+            // Orthographic top-down: compute the exact visible rectangle and load landblocks within it
+            if (currentCamera is OrthographicTopDownCamera orthoCamera && orthoCamera.ScreenSize.X > 0) {
+                return GetVisibleLandblocksOrtho(cameraPosition, orthoCamera);
+            }
+
+            // Perspective camera: use fixed proximity radius
+            return GetProximateLandblocksRadius(cameraPosition, PerspectiveProximityThreshold);
+        }
+
+        private HashSet<ushort> GetVisibleLandblocksOrtho(Vector3 cameraPosition, OrthographicTopDownCamera orthoCamera) {
+            float aspectRatio = orthoCamera.ScreenSize.X / orthoCamera.ScreenSize.Y;
+            float halfWidth = orthoCamera.OrthographicSize * aspectRatio / 2f;
+            float halfHeight = orthoCamera.OrthographicSize / 2f;
+
+            // Add one-landblock margin for smooth panning (objects don't pop in at edges)
+            float margin = TerrainDataManager.LandblockLength;
+
+            float visMinX = cameraPosition.X - halfWidth - margin;
+            float visMaxX = cameraPosition.X + halfWidth + margin;
+            float visMinY = cameraPosition.Y - halfHeight - margin;
+            float visMaxY = cameraPosition.Y + halfHeight + margin;
+
+            // Convert to landblock grid
+            int lbMinX = Math.Clamp((int)(visMinX / TerrainDataManager.LandblockLength), 0, (int)TerrainDataManager.MapSize - 1);
+            int lbMaxX = Math.Clamp((int)(visMaxX / TerrainDataManager.LandblockLength), 0, (int)TerrainDataManager.MapSize - 1);
+            int lbMinY = Math.Clamp((int)(visMinY / TerrainDataManager.LandblockLength), 0, (int)TerrainDataManager.MapSize - 1);
+            int lbMaxY = Math.Clamp((int)(visMaxY / TerrainDataManager.LandblockLength), 0, (int)TerrainDataManager.MapSize - 1);
+
+            // If the visible area would load too many landblocks, shrink to a capped radius
+            int gridWidth = lbMaxX - lbMinX + 1;
+            int gridHeight = lbMaxY - lbMinY + 1;
+            if (gridWidth * gridHeight > MaxLoadedLandblocks) {
+                // Fall back to radius-based with a cap derived from max landblocks
+                float cappedRadius = MathF.Sqrt(MaxLoadedLandblocks) * TerrainDataManager.LandblockLength / 2f;
+                return GetProximateLandblocksRadius(cameraPosition, cappedRadius);
+            }
+
+            var proximate = new HashSet<ushort>();
+            for (int lbX = lbMinX; lbX <= lbMaxX; lbX++) {
+                for (int lbY = lbMinY; lbY <= lbMaxY; lbY++) {
+                    proximate.Add((ushort)((lbX << 8) | lbY));
+                }
+            }
+
+            return proximate;
+        }
+
+        private HashSet<ushort> GetUnloadBoundaryLandblocks(Vector3 cameraPosition) {
+            var currentCamera = CameraManager?.Current;
+
+            if (currentCamera is OrthographicTopDownCamera orthoCamera && orthoCamera.ScreenSize.X > 0) {
+                // Use 3× landblock margin instead of 1× for unloading
+                float aspectRatio = orthoCamera.ScreenSize.X / orthoCamera.ScreenSize.Y;
+                float halfWidth = orthoCamera.OrthographicSize * aspectRatio / 2f;
+                float halfHeight = orthoCamera.OrthographicSize / 2f;
+                float unloadMargin = TerrainDataManager.LandblockLength * 3f;
+
+                float visMinX = cameraPosition.X - halfWidth - unloadMargin;
+                float visMaxX = cameraPosition.X + halfWidth + unloadMargin;
+                float visMinY = cameraPosition.Y - halfHeight - unloadMargin;
+                float visMaxY = cameraPosition.Y + halfHeight + unloadMargin;
+
+                int lbMinX = Math.Clamp((int)(visMinX / TerrainDataManager.LandblockLength), 0, (int)TerrainDataManager.MapSize - 1);
+                int lbMaxX = Math.Clamp((int)(visMaxX / TerrainDataManager.LandblockLength), 0, (int)TerrainDataManager.MapSize - 1);
+                int lbMinY = Math.Clamp((int)(visMinY / TerrainDataManager.LandblockLength), 0, (int)TerrainDataManager.MapSize - 1);
+                int lbMaxY = Math.Clamp((int)(visMaxY / TerrainDataManager.LandblockLength), 0, (int)TerrainDataManager.MapSize - 1);
+
+                var keepLoaded = new HashSet<ushort>();
+                for (int lbX = lbMinX; lbX <= lbMaxX; lbX++) {
+                    for (int lbY = lbMinY; lbY <= lbMaxY; lbY++) {
+                        keepLoaded.Add((ushort)((lbX << 8) | lbY));
+                    }
+                }
+                return keepLoaded;
+            }
+
+            // Perspective: 50% larger radius for unloading than loading
+            return GetProximateLandblocksRadius(cameraPosition, PerspectiveProximityThreshold * 1.5f);
+        }
+
+        private HashSet<ushort> GetProximateLandblocksRadius(Vector3 cameraPosition, float threshold) {
+            var proximate = new HashSet<ushort>();
+            var camLbX = (ushort)(cameraPosition.X / TerrainDataManager.LandblockLength);
+            var camLbY = (ushort)(cameraPosition.Y / TerrainDataManager.LandblockLength);
+
+            var lbd = (int)Math.Ceiling(threshold / TerrainDataManager.LandblockLength / 2f);
+            for (int dx = -lbd; dx <= lbd; dx++) {
+                for (int dy = -lbd; dy <= lbd; dy++) {
+                    var lbX = (ushort)Math.Clamp(camLbX + dx, 0, TerrainDataManager.MapSize - 1);
+                    var lbY = (ushort)Math.Clamp(camLbY + dy, 0, TerrainDataManager.MapSize - 1);
+                    var lbKey = (ushort)((lbX << 8) | lbY);
+                    var lbCenter = new Vector2(
+                        lbX * TerrainDataManager.LandblockLength + TerrainDataManager.LandblockLength / 2,
+                        lbY * TerrainDataManager.LandblockLength + TerrainDataManager.LandblockLength / 2);
+                    var dist2D = Vector2.Distance(new Vector2(cameraPosition.X, cameraPosition.Y), lbCenter);
+                    if (dist2D <= threshold) {
+                        proximate.Add(lbKey);
+                    }
+                }
+            }
+
+            return proximate;
+        }
+
+        public void RegenerateChunks(IEnumerable<ulong> chunkIds) {
+            foreach (var chunkId in chunkIds) {
+                var chunkX = (uint)(chunkId >> 32);
+                var chunkY = (uint)(chunkId & 0xFFFFFFFF);
+                var chunk = DataManager.GetOrCreateChunk(chunkX, chunkY);
+
+                // Re-queue generation for all contexts
+                foreach (var context in _contexts.Values) {
+                    QueueChunkForGeneration(chunk, context);
+                }
+            }
+        }
+
+        public void UpdateLandblocks(IEnumerable<uint> landblockIds) {
+            var landblocksByChunk = new Dictionary<ulong, List<uint>>();
+
+            foreach (var landblockId in landblockIds) {
+                var landblockX = landblockId >> 8;
+                var landblockY = landblockId & 0xFF;
+                var chunk = DataManager.GetChunkForLandblock(landblockX, landblockY);
+
+                if (chunk == null) continue;
+
+                var chunkId = chunk.GetChunkId();
+                if (!landblocksByChunk.ContainsKey(chunkId)) {
+                    landblocksByChunk[chunkId] = new List<uint>();
+                }
+
+                landblocksByChunk[chunkId].Add(landblockId);
+
+                var lbKey = (ushort)landblockId;
+                if (_sceneryObjects.ContainsKey(lbKey)) {
+                    _pendingSceneryRegen.Add(lbKey);
+                }
+            }
+
+            ProcessPendingSceneryRegen();
+
+            foreach (var kvp in landblocksByChunk) {
+                var chunk = DataManager.GetChunk(kvp.Key);
+                if (chunk != null) {
+                    foreach (var context in _contexts.Values) {
+                        context.GPUManager.UpdateLandblocks(chunk, kvp.Value, _terrainSystem);
+                    }
+                }
+            }
+        }
+
+        private void RefreshSceneryForNearbyLandblocks(Vector3 cameraPosition) {
+            float effectiveThreshold = GetEffectiveSceneryThreshold();
+            if (effectiveThreshold < 100f) return;
+
+            var camPos2D = new Vector2(cameraPosition.X, cameraPosition.Y);
+
+            foreach (var kvp in _sceneryObjects) {
+                if (kvp.Value.Count > 0 || _pendingSceneryRegen.Contains(kvp.Key) || _pendingLoadLandblocks.Contains(kvp.Key))
+                    continue;
+
+                var lbCenter = LandblockCenter(kvp.Key);
+                float dist = Vector2.Distance(camPos2D, lbCenter);
+                if (dist <= effectiveThreshold) {
+                    _pendingSceneryRegen.Add(kvp.Key);
+                }
+            }
+        }
+
+        private float GetEffectiveSceneryThreshold() {
+            if (CameraManager?.Current is OrthographicTopDownCamera ortho && ortho.OrthographicSize > 0) {
+                return SceneryDistanceThreshold * Math.Clamp(1800f / ortho.OrthographicSize, 0f, 1f);
+            }
+            return SceneryDistanceThreshold;
+        }
+
+        private float GetEffectiveDungeonThreshold() {
+            if (CameraManager?.Current is OrthographicTopDownCamera ortho && ortho.OrthographicSize > 0) {
+                return DungeonDistanceThreshold * Math.Clamp(1800f / ortho.OrthographicSize, 0f, 1f);
+            }
+            return DungeonDistanceThreshold;
+        }
+
+        public IEnumerable<(TerrainChunk chunk, ChunkRenderData renderData)> GetRenderableChunks(Frustum frustum, SceneContext context) {
+            foreach (var chunk in DataManager.GetAllChunks()) {
+                if (!frustum.IntersectsBoundingBox(chunk.Bounds)) continue;
+
+                var renderData = context.GPUManager.GetRenderData(chunk.GetChunkId());
+                if (renderData != null) {
+                    yield return (chunk, renderData);
+                }
+            }
+        }
+
+        public int GetLoadedChunkCount() => DataManager.GetAllChunks().Count();
+        public int GetVisibleChunkCount(Frustum frustum, SceneContext context) => GetRenderableChunks(frustum, context).Count();
+
+        public IEnumerable<StaticObject> GetAllStaticObjects() {
+            var focusedLB = _contexts.Values.FirstOrDefault()?.EnvCellManager.FocusedDungeonLB;
+            var visibility = _envCellManager?.LastVisibilityResult;
+
+            bool visibilityChanged = false;
+            if (visibility != null) {
+                uint camCellId = visibility.CameraCell?.CellId ?? 0;
+                int visCellCount = visibility.VisibleCellIds.Count;
+                int visHash = 0;
+                foreach (var id in visibility.VisibleCellIds)
+                    visHash = unchecked(visHash * 31 + (int)id);
+                if (camCellId != _lastCameraCellId || visCellCount != _lastVisibleCellCount || visHash != _lastVisibleCellHash) {
+                    visibilityChanged = true;
+                    _lastCameraCellId = camCellId;
+                    _lastVisibleCellCount = visCellCount;
+                    _lastVisibleCellHash = visHash;
+                }
+            }
+
+            if (_staticObjectsDirty || _cachedStaticObjects == null
+                || _cachedShowStaticObjects != ShowStaticObjects
+                || _cachedShowScenery != ShowScenery
+                || _cachedShowDungeons != ShowDungeons
+                || _cachedShowBuildingInteriors != ShowBuildingInteriors
+                || _cachedShowWeenieSpawns != ShowWeenieSpawns
+                || _cachedFocusedDungeonLB != focusedLB
+                || visibilityChanged) {
+                var statics = new List<StaticObject>();
+                if (ShowStaticObjects) {
+                    foreach (var doc in _documentManager.ActiveDocs.Values.OfType<LandblockDocument>()) {
+                        statics.AddRange(doc.GetStaticObjects());
+                    }
+                }
+                if (ShowScenery) {
+                    statics.AddRange(_sceneryObjects.Values.SelectMany(x => x));
+                }
+                if (ShowWeenieSpawns) {
+                    statics.AddRange(_weenieSpawnObjects.Values.SelectMany(x => x));
+                }
+
+                // Outdoor instance placements are always shown when present
+                if (_outdoorInstanceRenderObjects.Count > 0) {
+                    statics.AddRange(_outdoorInstanceRenderObjects.Select(r => r.Obj));
+                }
+
+                if (ShowDungeons || ShowBuildingInteriors) {
+                    ushort? cameraLbKey = visibility?.CameraCell?.LoadedLandblockKey;
+                    bool cameraInDungeon = _envCellManager != null && cameraLbKey.HasValue &&
+                        _contexts.Values.Any(c => c.EnvCellManager.IsDungeonLandblock(cameraLbKey.Value));
+
+                    // Building interior statics: shown when camera is inside a building cell
+                    // (portal-filtered), or always when ShowBuildingInteriors is enabled.
+                    bool showBuildingStatics = ShowBuildingInteriors || (visibility != null && !cameraInDungeon);
+                    if (showBuildingStatics) {
+                        foreach (var kvp in _buildingStaticObjects) {
+                            bool filterByPortal = !ShowBuildingInteriors && kvp.Key == cameraLbKey;
+                            var parentCells = filterByPortal ? _buildingStaticParentCells.GetValueOrDefault(kvp.Key) : null;
+                            for (int i = 0; i < kvp.Value.Count; i++) {
+                                if (filterByPortal && parentCells != null && i < parentCells.Count) {
+                                    if (!visibility!.VisibleCellIds.Contains(parentCells[i])) continue;
+                                }
+                                statics.Add(kvp.Value[i]);
+                            }
+                        }
+                    }
+
+                    // Dungeon statics: always shown when focused, filtered by
+                    // portal visibility only in the camera's own landblock
+                    if (ShowDungeons && focusedLB.HasValue) {
+                        foreach (var kvp in _dungeonStaticObjects) {
+                            if (kvp.Key != focusedLB.Value) continue;
+                            bool filterByPortal = visibility != null && kvp.Key == cameraLbKey;
+                            var parentCells = filterByPortal ? _dungeonStaticParentCells.GetValueOrDefault(kvp.Key) : null;
+                            for (int i = 0; i < kvp.Value.Count; i++) {
+                                if (filterByPortal && parentCells != null && i < parentCells.Count) {
+                                    if (!visibility!.VisibleCellIds.Contains(parentCells[i])) continue;
+                                }
+                                statics.Add(kvp.Value[i]);
+                            }
+                        }
+                    }
+                }
+                _cachedStaticObjects = statics;
+                _cachedShowStaticObjects = ShowStaticObjects;
+                _cachedShowScenery = ShowScenery;
+                _cachedShowDungeons = ShowDungeons;
+                _cachedShowBuildingInteriors = ShowBuildingInteriors;
+                _cachedShowWeenieSpawns = ShowWeenieSpawns;
+                _cachedFocusedDungeonLB = focusedLB;
+                _staticObjectsDirty = false;
+            }
+            return _cachedStaticObjects;
+        }
+
+        public void InvalidateStaticObjectsCache() {
+            _staticObjectsDirty = true;
+            _particleEmitters.Clear();
+        }
+
+        /// <summary>
+        /// Forces a landblock's EnvCells to be re-read from the DAT on the next update.
+        /// Call this after writing new EnvCells into the in-memory DAT (e.g. after manual
+        /// blueprint placement) so the EnvCellManager picks them up immediately.
+        /// </summary>
+        public void InvalidateEnvCellsForLandblock(ushort lbKey) {
+            _pendingEnvCellRetries.Remove(lbKey);
+            foreach (var context in _contexts.Values)
+                context.EnvCellManager.QueueUnload(lbKey);
+        }
+
+        /// <summary>
+        /// Queues pre-computed preview EnvCells for a landblock so the EnvCellManager
+        /// can render the building interior without any DAT writes.
+        /// Called after manual blueprint placement; export handles real DAT writes.
+        /// </summary>
+        public void PreviewBuildingInterior(ushort lbKey, List<EnvCell> previewCells) {
+            _pendingPreviewCells[lbKey] = previewCells;
+            _pendingEnvCellRetries.Remove(lbKey);
+            foreach (var context in _contexts.Values)
+                context.EnvCellManager.QueueUnload(lbKey);
+        }
+
+        static bool TryGetParticleGfxId(IDatReaderWriter dats, uint emitterDid, out uint gfxId) =>
+            AcParticleEmitterSimulator.TryResolveVisualGfxObjectIdFromPortal(dats, emitterDid, out gfxId);
+
+        bool TryGetStaticDrawModel(StaticObject obj, out uint modelId, out bool isSetup) {
+            if (!obj.IsParticleEmitter) {
+                modelId = obj.Id;
+                isSetup = obj.IsSetup;
+                return true;
+            }
+            if (!TryGetParticleGfxId(_dats, obj.Id, out modelId)) {
+                isSetup = false;
+                return false;
+            }
+            isSetup = false;
+            return modelId != 0;
+        }
+
+        static void AddWarmupIdsForStaticObject(IDatReaderWriter dats, StaticObject obj, HashSet<(uint Id, bool IsSetup)> uniqueIds) {
+            if (obj.IsParticleEmitter) {
+                if (TryGetParticleGfxId(dats, obj.Id, out var g))
+                    uniqueIds.Add((g, false));
+            }
+            else {
+                uniqueIds.Add((obj.Id, obj.IsSetup));
+            }
+        }
+
+        bool ParticleAnchorInFrustum(SceneContext context, StaticObject anchor, Matrix4x4 worldTransform, Frustum frustum) {
+            if (!TryGetParticleGfxId(_dats, anchor.Id, out var gfxId)) return true;
+            var localBounds = context.ObjectManager.GetBounds(gfxId, false);
+            if (!localBounds.HasValue) return true;
+            var (localMin, localMax) = localBounds.Value;
+            var worldMin = new Vector3(float.MaxValue);
+            var worldMax = new Vector3(float.MinValue);
+            for (int ci = 0; ci < 8; ci++) {
+                var corner = new Vector3(
+                    (ci & 1) == 0 ? localMin.X : localMax.X,
+                    (ci & 2) == 0 ? localMin.Y : localMax.Y,
+                    (ci & 4) == 0 ? localMin.Z : localMax.Z);
+                var wc = Vector3.Transform(corner, worldTransform);
+                worldMin = Vector3.Min(worldMin, wc);
+                worldMax = Vector3.Max(worldMax, wc);
+            }
+            return frustum.IntersectsBoundingBox(new BoundingBox(worldMin, worldMax));
+        }
+
+        void CollectParticleDraws(SceneContext context, Frustum frustum, double wallSeconds, float deltaTime) {
+            _particleDrawObjects.Clear();
+            _particleDrawTransforms.Clear();
+            if (!ShowParticles)
+                return;
+            foreach (var kv in _documentManager.ActiveDocs) {
+                if (kv.Value is not LandblockDocument lbDoc) continue;
+                if (!kv.Key.StartsWith("landblock_", StringComparison.Ordinal)) continue;
+                if (!ushort.TryParse(kv.Key.Replace("landblock_", "", StringComparison.Ordinal), System.Globalization.NumberStyles.HexNumber, null, out var lbKey)) continue;
+
+                for (int i = 0; i < lbDoc.StaticObjectCount; i++) {
+                    var obj = lbDoc.GetStaticObject(i);
+                    if (!obj.IsParticleEmitter) continue;
+                    if (!TryGetParticleGfxId(_dats, obj.Id, out var gfxId)) continue;
+
+                    var anchorWorld = Matrix4x4.CreateScale(obj.Scale)
+                        * Matrix4x4.CreateFromQuaternion(obj.Orientation)
+                        * Matrix4x4.CreateTranslation(obj.Origin);
+                    if (!ParticleAnchorInFrustum(context, obj, anchorWorld, frustum)) continue;
+
+                    var key = (lbKey, i);
+                    if (!_particleEmitters.TryGetValue(key, out var sim) || sim.EmitterId != obj.Id) {
+                        sim = new AcParticleEmitterSimulator();
+                        if (!sim.TryLoad(_dats, obj.Id)) continue;
+                        sim.Begin(wallSeconds, anchorWorld);
+                        _particleEmitters[key] = sim;
+                    }
+
+                    sim.Advance(wallSeconds, deltaTime, anchorWorld, _particleInstanceScratch);
+                    foreach (var wm in _particleInstanceScratch) {
+                        _particleDrawObjects.Add(new StaticObject {
+                            Id = gfxId,
+                            IsSetup = false,
+                            Origin = default,
+                            Orientation = Quaternion.Identity,
+                            Scale = Vector3.One,
+                            IsParticleEmitter = false
+                        });
+                        _particleDrawTransforms.Add(wm);
+                    }
+                }
+            }
+        }
+
+        public void QueueModelWarmup(uint modelId, bool isSetup) {
+            _pendingModelWarmup.Enqueue((modelId, isSetup));
+        }
+
+        public event Action<ushort>? LandblockIntegrated;
+
+        public void SetWeenieSpawns(ushort lbKey, List<StaticObject> spawns) {
+            _weenieSpawnObjects[lbKey] = spawns;
+            var uniqueIds = new HashSet<uint>();
+            foreach (var obj in spawns) {
+                if (uniqueIds.Add(obj.Id)) {
+                    _pendingModelWarmup.Enqueue((obj.Id, obj.IsSetup));
+                }
+            }
+            _staticObjectsDirty = true;
+            Console.WriteLine($"[Spawns] SetWeenieSpawns({lbKey:X4}): {spawns.Count} objects, {uniqueIds.Count} unique models queued for warmup");
+        }
+
+        public void ClearWeenieSpawns(ushort lbKey) {
+            _weenieSpawnObjects.TryRemove(lbKey, out _);
+            _staticObjectsDirty = true;
+        }
+
+        public void ClearAllWeenieSpawns() {
+            _weenieSpawnObjects.Clear();
+            _staticObjectsDirty = true;
+        }
+
+        /// <summary>
+        /// Replaces the rendered outdoor instance placement objects (from Project.OutdoorInstancePlacements).
+        /// Each entry carries a back-reference index into the original placements list for picking.
+        /// </summary>
+        public void SetOutdoorInstanceRenderObjects(IReadOnlyList<(int PlacementIndex, StaticObject Obj)> objects) {
+            _outdoorInstanceRenderObjects = new List<(int, StaticObject)>(objects);
+            foreach (var (_, obj) in _outdoorInstanceRenderObjects)
+                _pendingModelWarmup.Enqueue((obj.Id, obj.IsSetup));
+            _staticObjectsDirty = true;
+        }
+
+        /// <summary>
+        /// Returns the current outdoor instance render objects for raycasting.
+        /// </summary>
+        public IReadOnlyList<(int PlacementIndex, StaticObject Obj)> GetOutdoorInstanceRenderObjects()
+            => _outdoorInstanceRenderObjects;
+
+        /// <summary>
+        /// Clears all disk and in-memory caches (textures, terrain, GPU resources) and forces a full reload.
+        /// Must be called on the GL thread.
+        /// </summary>
+        public void ClearAllCaches() {
+            _clearingCaches = true;
+            try {
+                Console.WriteLine("[Cache] Clearing all caches...");
+
+                _textureCache.Clear();
+                Console.WriteLine("[Cache] Texture disk cache cleared.");
+
+                var cacheDir = _documentManager.CacheDirectory;
+                if (!string.IsNullOrWhiteSpace(cacheDir)) {
+                    var terrainCachePath = System.IO.Path.Combine(cacheDir, "terrain.dat");
+                    try {
+                        if (File.Exists(terrainCachePath)) {
+                            File.Delete(terrainCachePath);
+                            Console.WriteLine("[Cache] Deleted terrain.dat cache.");
+                        }
+                    }
+                    catch (Exception ex) {
+                        Console.WriteLine($"[Cache] Error deleting terrain.dat: {ex.Message}");
+                    }
+                }
+
+                foreach (var context in _contexts.Values) {
+                    context.ObjectManager.ClearAll();
+                    context.EnvCellManager.ClearAll();
+                    context.GPUManager.ClearAll();
+
+                    context.ChunkUploadQueue.Clear();
+                    context.ModelUploadQueue.Clear();
+                    context.ModelWarmupQueue.Clear();
+                    context.ModelsPreparing.Clear();
+                    context.ChunksInFlight.Clear();
+                }
+                Console.WriteLine("[Cache] GPU resources cleared.");
+
+                _sceneryObjects.Clear();
+                _dungeonStaticObjects.Clear();
+                _buildingStaticObjects.Clear();
+                _dungeonStaticParentCells.Clear();
+                _buildingStaticParentCells.Clear();
+                _pendingLoadLandblocks.Clear();
+                _pendingEnvCellRetries.Clear();
+                _pendingPreviewCells.Clear();
+                _pendingSceneryRegen.Clear();
+
+                _cachedStaticObjects = null;
+                _cachedNonDungeonStatics = null;
+                _cachedDungeonStatics = null;
+                _staticObjectsDirty = true;
+                _particleEmitters.Clear();
+
+                DataManager.ClearChunks();
+
+                while (_backgroundLoadResults.TryDequeue(out _)) { }
+
+                var landblockDocs = _documentManager.ActiveDocs.Keys
+                    .Where(k => k.StartsWith("landblock_"))
+                    .ToList();
+                foreach (var docId in landblockDocs) {
+                    _ = _documentManager.CloseDocumentAsync(docId);
+                }
+                Console.WriteLine($"[Cache] Closed {landblockDocs.Count} landblock documents.");
+
+                _lastVisibleLandblocks = null;
+                _lastDocUpdatePosition = new Vector3(float.MinValue);
+                _lastOrthoSize = -1f;
+
+                Console.WriteLine("[Cache] All caches cleared. Scene will reload from DAT files.");
+            }
+            finally {
+                _clearingCaches = false;
+            }
+        }
+
+        private SceneContext GetContext(OpenGLRenderer renderer) {
+            var context = _contexts.GetOrAdd(renderer, r => {
+                SurfaceManager.RegisterRenderer(r);
+                return new SceneContext(r, _dats, _textureCache);
+            });
+
+            if (_thumbnailService == null) {
+                lock (_contexts) {
+                    if (_thumbnailService == null) {
+                        _thumbnailService = new ThumbnailRenderService(renderer, context.ObjectManager);
+
+                        var allObjects = GetAllStaticObjects();
+                        var uniqueIds = new HashSet<(uint, bool)>();
+                        foreach (var obj in allObjects) uniqueIds.Add((obj.Id, obj.IsSetup));
+
+                        context.ModelWarmupQueue.Clear();
+                        foreach (var item in uniqueIds) context.ModelWarmupQueue.Enqueue(item);
+                    }
+                }
+            }
+            return context;
+        }
+
+        public void Render(
+            ICamera camera,
+            OpenGLRenderer renderer,
+            float aspectRatio,
+            TerrainEditingContext editingContext,
+            float width,
+            float height) {
+
+            if (_clearingCaches) return;
+
+            _frameTimer.Restart();
+            int drawCalls = 0;
+            int triangleCount = 0;
+
+            var context = GetContext(renderer);
+            var gl = renderer.GraphicsDevice.GL;
+
+            ProcessPendingUploads(context);
+            SurfaceManager.ProcessPendingTextureUpdates();
+
+            _aspectRatio = aspectRatio;
+            gl.Enable(EnableCap.DepthTest);
+            gl.DepthFunc(DepthFunction.Less);
+            gl.DepthMask(true);
+            gl.ClearColor(SkyHorizonColor.X, SkyHorizonColor.Y, SkyHorizonColor.Z, 1.0f);
+            gl.ClearDepth(1f);
+            gl.Clear(
+                ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
+            gl.Enable(EnableCap.CullFace);
+            gl.CullFace(TriangleFace.Back);
+
+            Matrix4x4 model = Matrix4x4.Identity;
+            Matrix4x4 view = camera.GetViewMatrix();
+            Matrix4x4 projection = camera.GetProjectionMatrix();
+            Matrix4x4 viewProjection = view * projection;
+
+            float cameraDistance = MathF.Abs(camera.Position.Z);
+            if (camera is OrthographicTopDownCamera orthoCamera) {
+                cameraDistance = orthoCamera.OrthographicSize;
+            }
+
+            var frustum = new Frustum(viewProjection);
+            var renderableChunks = GetRenderableChunks(frustum, context);
+
+            // --- Render order matches the original AC client (PView::DrawCells): ---
+            //   1. Terrain first  (landscape drawn, color+depth written)
+            //   2. Depth-clear    (only when camera is inside a building/dungeon)
+            //   3. EnvCells       (building/dungeon geometry on top)
+            // Portal openings contain no EnvCell geometry, so the terrain that
+            // was already drawn in step 1 remains visible through them.
+
+            // Pre-compute EnvCell visibility so we know whether the camera is
+            // inside a building before we decide whether to depth-clear.
+            context.EnvCellManager.ShowDungeonCells = ShowDungeons;
+            context.EnvCellManager.AlwaysShowBuildingInteriors = ShowBuildingInteriors;
+            context.EnvCellManager.ComputeVisibility(viewProjection, camera);
+
+            // Step 1: Sky gradient — drawn before terrain, no depth write.
+            RenderSky(context);
+
+            // Step 1b: Terrain. PolygonOffset pushes terrain slightly back so
+            // building floors win at equal Z when the camera is outside.
+            gl.Enable(EnableCap.PolygonOffsetFill);
+            gl.PolygonOffset(1f, 1f);
+            RenderTerrain(context, renderableChunks, model, camera, cameraDistance, width, height, editingContext);
+            gl.Disable(EnableCap.PolygonOffsetFill);
+
+            // Step 2: When the camera is inside a building or dungeon cell,
+            // clear only the depth buffer. Terrain stays in the color buffer so
+            // exit-portal openings show the landscape behind them instead of the
+            // clear color. EnvCell geometry will write fresh depth on top.
+            bool cameraInsideCell = context.EnvCellManager.LastVisibilityResult?.CameraCell != null;
+            if (cameraInsideCell) {
+                gl.Clear(ClearBufferMask.DepthBufferBit);
+            }
+
+            // Step 3: EnvCells (building interiors + dungeon cells).
+            context.EnvCellManager.Render(viewProjection, camera, LightDirection, AmbientLightIntensity, SpecularPower);
+
+            if (editingContext.ActiveVertices.Count > 0) {
+                RenderActiveSpheres(context, editingContext, camera, model, viewProjection);
+            }
+
+            var renderSw = Stopwatch.StartNew();
+            var allObjects = GetAllStaticObjects();
+            _visibleObjectsBuffer.Clear();
+            _visibleTransformsBuffer.Clear();
+            foreach (var obj in allObjects) {
+                if (obj.IsParticleEmitter) continue;
+
+                var worldTransform = Matrix4x4.CreateScale(obj.Scale)
+                    * Matrix4x4.CreateFromQuaternion(obj.Orientation)
+                    * Matrix4x4.CreateTranslation(obj.Origin);
+
+                var localBounds = context.ObjectManager.GetBounds(obj.Id, obj.IsSetup);
+                BoundingBox objBounds;
+                if (localBounds.HasValue) {
+                    var (localMin, localMax) = localBounds.Value;
+                    var worldMin = new Vector3(float.MaxValue);
+                    var worldMax = new Vector3(float.MinValue);
+                    for (int ci = 0; ci < 8; ci++) {
+                        var corner = new Vector3(
+                            (ci & 1) == 0 ? localMin.X : localMax.X,
+                            (ci & 2) == 0 ? localMin.Y : localMax.Y,
+                            (ci & 4) == 0 ? localMin.Z : localMax.Z);
+                        var worldCorner = Vector3.Transform(corner, worldTransform);
+                        worldMin = Vector3.Min(worldMin, worldCorner);
+                        worldMax = Vector3.Max(worldMax, worldCorner);
+                    }
+                    objBounds = new BoundingBox(worldMin, worldMax);
+                }
+                else {
+                    const float fallbackRadius = 50f;
+                    objBounds = new BoundingBox(
+                        obj.Origin - new Vector3(fallbackRadius),
+                        obj.Origin + new Vector3(fallbackRadius));
+                }
+                if (frustum.IntersectsBoundingBox(objBounds)) {
+                    _visibleObjectsBuffer.Add(obj);
+                    _visibleTransformsBuffer.Add(worldTransform);
+                }
+            }
+            if (ShowWeenieSpawns && DateTime.UtcNow - _lastSpawnDiag > TimeSpan.FromSeconds(5)) {
+                _lastSpawnDiag = DateTime.UtcNow;
+                int weenieTotal = _weenieSpawnObjects.Values.Sum(v => v.Count);
+                int allCount = allObjects.Count();
+                int visCount = _visibleObjectsBuffer.Count;
+                int noRenderData = 0;
+                foreach (var obj in _visibleObjectsBuffer) {
+                    if (context.ObjectManager.TryGetCachedRenderData(obj.Id) == null) noRenderData++;
+                }
+                Console.WriteLine($"[Spawns] RENDER DIAG: weenieStore={weenieTotal}, allStatics={allCount}, visible={visCount}, noRenderData={noRenderData}, warmupQ={context.ModelWarmupQueue.Count}, uploadQ={context.ModelUploadQueue.Count}, preparing={context.ModelsPreparing.Count}");
+            }
+            if (_visibleObjectsBuffer.Count > 0) {
+                RenderStaticObjectsPreTransformed(context, _visibleObjectsBuffer, _visibleTransformsBuffer, camera, viewProjection);
+            }
+
+            double wallSec = System.Environment.TickCount64 / 1000.0;
+            float pDt = _lastParticleWallSeconds < 0 ? 1f / 60f : (float)(wallSec - _lastParticleWallSeconds);
+            _lastParticleWallSeconds = wallSec;
+            CollectParticleDraws(context, frustum, wallSec, Math.Clamp(pDt, 0f, 0.25f));
+            if (_particleDrawObjects.Count > 0) {
+                RenderStaticObjectsPreTransformed(context, _particleDrawObjects, _particleDrawTransforms, camera, viewProjection, additiveBlend: true);
+            }
+
+            long renderStaticsMs = renderSw.ElapsedMilliseconds;
+            if (renderStaticsMs > 200) {
+                Console.WriteLine($"[GameScene.Render] Static objects: {renderStaticsMs}ms ({_visibleObjectsBuffer.Count} objects)");
+            }
+
+            if (editingContext.ObjectSelection.HasSelection) {
+                RenderSelectionGlow(context, editingContext.ObjectSelection, camera, viewProjection);
+                RenderSelectionHighlight(context, editingContext.ObjectSelection, camera, viewProjection);
+                RenderTransformGizmo(context, editingContext.ObjectSelection, camera, viewProjection);
+            }
+
+            if (editingContext.ObjectSelection.IsPlacementMode && editingContext.ObjectSelection.PlacementPreview.HasValue) {
+                RenderPlacementPreview(context, editingContext.ObjectSelection.PlacementPreview.Value, camera, viewProjection);
+            }
+
+            // Render selection preview bounds (Clone tool, PR #9)
+            if (editingContext.ObjectSelection.SelectionPreviewBounds.HasValue) {
+                RenderSelectionBounds(context, editingContext.ObjectSelection.SelectionPreviewBounds.Value, camera, viewProjection, editingContext);
+            }
+
+            // Render stamp preview (Paste tool, PR #9)
+            if (_currentStampPreview != null) {
+                RenderStampPreview(context, camera, viewProjection);
+            }
+
+            _thumbnailService?.ProcessQueue(renderer);
+
+            LastObjectCount = _visibleObjectsBuffer.Count;
+            LastDrawCalls = drawCalls;
+            LastTriangleCount = triangleCount;
+        }
+
+        private unsafe void RenderSelectionHighlight(SceneContext context, ObjectSelectionState selection, ICamera camera, Matrix4x4 viewProjection) {
+            if (!selection.HasSelection) return;
+            var gl = context.Renderer.GraphicsDevice.GL;
+
+            // EnvCell (dungeon cell) highlight ? use cell bounding box corners
+            if (selection.HasEnvCellSelection) {
+                var cell = selection.SelectedEnvCell!;
+                float r = EnvCellManager.CellBoundsRadius;
+                float sphereR = r * 0.08f; // proportional sphere size
+                var pos = cell.WorldPosition;
+                var cellCorners = new List<Vector4>();
+
+                // 8 corners of the bounding box
+                for (int cx = -1; cx <= 1; cx += 2)
+                    for (int cy = -1; cy <= 1; cy += 2)
+                        for (int cz = -1; cz <= 1; cz += 2)
+                            cellCorners.Add(new Vector4(pos.X + cx * r, pos.Y + cy * r, pos.Z + cz * r, sphereR));
+
+                gl.Enable(EnableCap.Blend);
+                gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+                context.SphereShader.Bind();
+                context.SphereShader.SetUniform("uViewProjection", viewProjection);
+                context.SphereShader.SetUniform("uCameraPosition", camera.Position);
+                context.SphereShader.SetUniform("uSphereColor", new Vector3(0.0f, 0.8f, 1.0f)); // Cyan for dungeon cells
+                context.SphereShader.SetUniform("uLightDirection", Vector3.Normalize(LightDirection));
+                context.SphereShader.SetUniform("uAmbientIntensity", 0.8f);
+                context.SphereShader.SetUniform("uSpecularPower", SpecularPower);
+                context.SphereShader.SetUniform("uGlowColor", new Vector3(0.0f, 0.8f, 1.0f));
+                context.SphereShader.SetUniform("uGlowIntensity", 2.0f);
+                context.SphereShader.SetUniform("uGlowPower", 0.3f);
+
+                var cellArray = cellCorners.ToArray();
+                gl.BindBuffer(GLEnum.ArrayBuffer, context.SphereInstanceVBO);
+                unsafe {
+                    fixed (Vector4* ptr = cellArray) {
+                        gl.BufferData(GLEnum.ArrayBuffer, (nuint)(cellArray.Length * sizeof(Vector4)), ptr, GLEnum.DynamicDraw);
+                    }
+                }
+                gl.BindVertexArray(context.SphereVAO);
+                gl.DrawElementsInstanced(GLEnum.Triangles, (uint)context.SphereIndexCount, GLEnum.UnsignedInt, null, (uint)cellArray.Length);
+                gl.BindVertexArray(0);
+                gl.UseProgram(0);
+                gl.Disable(EnableCap.Blend);
+                return; // EnvCell selection handled, skip static object highlight
+            }
+
+            // Collect corners for all selected objects, with per-object sphere radius
+            var allInstances = new List<Vector4>();
+            foreach (var entry in selection.SelectedEntries.ToList()) {
+                var obj = entry.Object;
+                if (!TryGetStaticDrawModel(obj, out var mid, out var mSetup)) continue;
+                var bounds = context.ObjectManager.GetBounds(mid, mSetup);
+                if (bounds == null) continue;
+
+                var (localMin, localMax) = bounds.Value;
+                var extent = (localMax - localMin) * obj.Scale;
+                float maxExtent = MathF.Max(extent.X, MathF.Max(extent.Y, extent.Z));
+                float radius = Math.Clamp(maxExtent * 0.1f, 0.15f, SphereRadius * 0.5f);
+
+                var worldTransform = Matrix4x4.CreateScale(obj.Scale)
+                    * Matrix4x4.CreateFromQuaternion(obj.Orientation)
+                    * Matrix4x4.CreateTranslation(obj.Origin);
+
+                Vector3 corner;
+                corner = Vector3.Transform(new Vector3(localMin.X, localMin.Y, localMin.Z), worldTransform);
+                allInstances.Add(new Vector4(corner, radius));
+                corner = Vector3.Transform(new Vector3(localMax.X, localMin.Y, localMin.Z), worldTransform);
+                allInstances.Add(new Vector4(corner, radius));
+                corner = Vector3.Transform(new Vector3(localMin.X, localMax.Y, localMin.Z), worldTransform);
+                allInstances.Add(new Vector4(corner, radius));
+                corner = Vector3.Transform(new Vector3(localMax.X, localMax.Y, localMin.Z), worldTransform);
+                allInstances.Add(new Vector4(corner, radius));
+                corner = Vector3.Transform(new Vector3(localMin.X, localMin.Y, localMax.Z), worldTransform);
+                allInstances.Add(new Vector4(corner, radius));
+                corner = Vector3.Transform(new Vector3(localMax.X, localMin.Y, localMax.Z), worldTransform);
+                allInstances.Add(new Vector4(corner, radius));
+                corner = Vector3.Transform(new Vector3(localMin.X, localMax.Y, localMax.Z), worldTransform);
+                allInstances.Add(new Vector4(corner, radius));
+                corner = Vector3.Transform(new Vector3(localMax.X, localMax.Y, localMax.Z), worldTransform);
+                allInstances.Add(new Vector4(corner, radius));
+            }
+
+            if (allInstances.Count == 0) return;
+
+            gl.Enable(EnableCap.Blend);
+            gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+
+            context.SphereShader.Bind();
+            context.SphereShader.SetUniform("uViewProjection", viewProjection);
+            context.SphereShader.SetUniform("uCameraPosition", camera.Position);
+            context.SphereShader.SetUniform("uSphereColor", new Vector3(1.0f, 0.8f, 0.0f));
+            context.SphereShader.SetUniform("uLightDirection", Vector3.Normalize(LightDirection));
+            context.SphereShader.SetUniform("uAmbientIntensity", 0.8f);
+            context.SphereShader.SetUniform("uSpecularPower", SpecularPower);
+            context.SphereShader.SetUniform("uGlowColor", new Vector3(1.0f, 0.8f, 0.0f));
+            context.SphereShader.SetUniform("uGlowIntensity", 2.0f);
+            context.SphereShader.SetUniform("uGlowPower", 0.3f);
+
+            var instanceArray = allInstances.ToArray();
+            gl.BindBuffer(GLEnum.ArrayBuffer, context.SphereInstanceVBO);
+            fixed (Vector4* ptr = instanceArray) {
+                gl.BufferData(GLEnum.ArrayBuffer, (nuint)(instanceArray.Length * sizeof(Vector4)), ptr, GLEnum.DynamicDraw);
+            }
+
+            gl.BindVertexArray(context.SphereVAO);
+            gl.DrawElementsInstanced(GLEnum.Triangles, (uint)context.SphereIndexCount, GLEnum.UnsignedInt, null, (uint)instanceArray.Length);
+            gl.BindVertexArray(0);
+            gl.UseProgram(0);
+            gl.Disable(EnableCap.Blend);
+        }
+
+        private unsafe void RenderSelectionGlow(SceneContext context, ObjectSelectionState selection, ICamera camera, Matrix4x4 viewProjection) {
+            if (!selection.HasSelection || selection.HasEnvCellSelection) return;
+            var entries = selection.SelectedEntries.ToList();
+            if (entries.Count == 0) return;
+
+            var gl = context.Renderer.GraphicsDevice.GL;
+            var objectManager = context.ObjectManager;
+
+            _selectionTime += 0.016f;
+            float pulse = 0.6f + 0.4f * MathF.Sin(_selectionTime * 3.5f);
+
+            gl.Enable(EnableCap.DepthTest);
+            gl.DepthMask(false);
+            gl.Enable(EnableCap.Blend);
+            gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.One);
+            gl.Enable(EnableCap.CullFace);
+            gl.CullFace(TriangleFace.Back);
+
+            objectManager._objectShader.Bind();
+            objectManager._objectShader.SetUniform("uViewProjection", viewProjection);
+            objectManager._objectShader.SetUniform("uCameraPosition", camera.Position);
+            objectManager._objectShader.SetUniform("uLightDirection", Vector3.Normalize(LightDirection));
+            objectManager._objectShader.SetUniform("uAmbientIntensity", AmbientLightIntensity);
+            objectManager._objectShader.SetUniform("uSpecularPower", SpecularPower);
+            objectManager._objectShader.SetUniform("uHighlightColor", new Vector3(1.0f, 0.75f, 0.1f));
+            objectManager._objectShader.SetUniform("uHighlightIntensity", pulse);
+            objectManager._objectShader.SetUniform("uFogEnabled", FogEnabled ? 1 : 0);
+            objectManager._objectShader.SetUniform("uFogColor", SkyHorizonColor);
+            objectManager._objectShader.SetUniform("uFogStart", FogStart);
+            objectManager._objectShader.SetUniform("uFogEnd", FogEnd);
+
+            var groups = new Dictionary<(uint Id, bool IsSetup), List<Matrix4x4>>();
+            foreach (var entry in entries) {
+                var obj = entry.Object;
+                var key = (obj.Id, obj.IsSetup);
+                if (!groups.TryGetValue(key, out var list)) {
+                    list = new List<Matrix4x4>();
+                    groups[key] = list;
+                }
+                list.Add(
+                    Matrix4x4.CreateScale(obj.Scale)
+                    * Matrix4x4.CreateFromQuaternion(obj.Orientation)
+                    * Matrix4x4.CreateTranslation(obj.Origin));
+            }
+
+            foreach (var group in groups) {
+                if (group.Value.Count == 0) continue;
+                var (id, isSetup) = group.Key;
+                var renderData = objectManager.TryGetCachedRenderData(id);
+                if (renderData == null) continue;
+
+                if (isSetup && renderData.SetupParts != null) {
+                    foreach (var (partId, partTransform) in renderData.SetupParts) {
+                        var partRenderData = objectManager.TryGetCachedRenderData(partId);
+                        if (partRenderData == null) continue;
+                        var partInstances = new List<Matrix4x4>();
+                        foreach (var m in group.Value) partInstances.Add(partTransform * m);
+                        RenderBatchedObject(context, partRenderData, partInstances);
+                    }
+                }
+                else {
+                    RenderBatchedObject(context, renderData, group.Value);
+                }
+            }
+
+            objectManager._objectShader.SetUniform("uHighlightIntensity", 0f);
+            gl.BindVertexArray(0);
+            gl.UseProgram(0);
+            gl.DepthMask(true);
+            gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+            gl.Disable(EnableCap.Blend);
+        }
+
+        private void RenderTransformGizmo(SceneContext context, ObjectSelectionState selection, ICamera camera, Matrix4x4 viewProjection) {
+            if (!selection.HasSelection || selection.HasEnvCellSelection || selection.IsPlacementMode || !selection.HasEditableEntry) return;
+            var entries = selection.SelectedEntries;
+            if (entries.Count == 0) return;
+
+            var gizmo = context.Gizmo;
+            gizmo.UseLocalSpace = _settings.Landscape.Snap.UseLocalSpace;
+
+            // Compute gizmo center (centroid of all selected objects)
+            var center = Vector3.Zero;
+            foreach (var e in entries) center += e.Object.Origin;
+            center /= entries.Count;
+
+            // Use first object's orientation for local-space gizmo
+            var orientation = entries.Count == 1 ? entries[0].Object.Orientation : Quaternion.Identity;
+
+            var gl = context.Renderer.GraphicsDevice.GL;
+            gizmo.Render(gl, viewProjection, camera, center, orientation, true);
+
+            // Render wireframe bounding boxes for each selected object
+            foreach (var entry in entries) {
+                var obj = entry.Object;
+                if (!TryGetStaticDrawModel(obj, out var gMid, out var gSetup)) continue;
+                var bounds = context.ObjectManager.GetBounds(gMid, gSetup);
+                if (bounds == null) continue;
+                var (localMin, localMax) = bounds.Value;
+                var worldTransform = Matrix4x4.CreateScale(obj.Scale)
+                    * Matrix4x4.CreateFromQuaternion(obj.Orientation)
+                    * Matrix4x4.CreateTranslation(obj.Origin);
+
+                var worldCorners = new Vector3[8];
+                worldCorners[0] = Vector3.Transform(new(localMin.X, localMin.Y, localMin.Z), worldTransform);
+                worldCorners[1] = Vector3.Transform(new(localMax.X, localMin.Y, localMin.Z), worldTransform);
+                worldCorners[2] = Vector3.Transform(new(localMax.X, localMax.Y, localMin.Z), worldTransform);
+                worldCorners[3] = Vector3.Transform(new(localMin.X, localMax.Y, localMin.Z), worldTransform);
+                worldCorners[4] = Vector3.Transform(new(localMin.X, localMin.Y, localMax.Z), worldTransform);
+                worldCorners[5] = Vector3.Transform(new(localMax.X, localMin.Y, localMax.Z), worldTransform);
+                worldCorners[6] = Vector3.Transform(new(localMax.X, localMax.Y, localMax.Z), worldTransform);
+                worldCorners[7] = Vector3.Transform(new(localMin.X, localMax.Y, localMax.Z), worldTransform);
+
+                var wMin = worldCorners[0]; var wMax = worldCorners[0];
+                for (int i = 1; i < 8; i++) {
+                    wMin = Vector3.Min(wMin, worldCorners[i]);
+                    wMax = Vector3.Max(wMax, worldCorners[i]);
+                }
+                gizmo.RenderSelectionBox(gl, viewProjection, camera, wMin, wMax, new Vector3(1f, 0.85f, 0.15f));
+            }
+        }
+
+        /// <summary>Set stamp preview data for Paste tool (PR #9). Preview rendering is per-context and called from Render().</summary>
+        public void SetStampPreview(TerrainStamp? stamp, Vector2 worldPosition, float zOffset) {
+            if (stamp == null) {
+                _currentStampPreview = null;
+                _previewDirty = true;
+                return;
+            }
+            var heightTable = _terrainSystem.Region.LandDefs.LandHeightTable;
+            _currentStampPreview = WorldBuilder.Rendering.PreviewMeshGenerator.GenerateStampPreview(
+                stamp, worldPosition, zOffset, heightTable);
+            _previewDirty = true;
+        }
+
+        private void RenderStampPreview(SceneContext context, ICamera camera, Matrix4x4 viewProjection) {
+            if (_currentStampPreview == null) return;
+            context.RenderStampPreview(_currentStampPreview, _previewDirty, AmbientLightIntensity, SurfaceManager.GetTerrainAtlas(context.Renderer), camera, viewProjection);
+            _previewDirty = false;
+        }
+
+        private void RenderPlacementPreview(SceneContext context, StaticObject previewObj, ICamera camera, Matrix4x4 viewProjection) {
+            var drawObj = previewObj;
+            if (previewObj.IsParticleEmitter) {
+                if (!TryGetParticleGfxId(_dats, previewObj.Id, out var gid)) return;
+                drawObj = new StaticObject {
+                    Id = gid,
+                    IsSetup = false,
+                    Origin = previewObj.Origin,
+                    Orientation = previewObj.Orientation,
+                    Scale = previewObj.Scale,
+                    IsParticleEmitter = false
+                };
+            }
+
+            var renderData = context.ObjectManager.GetRenderData(drawObj.Id, drawObj.IsSetup);
+            if (renderData == null) return;
+
+            if (renderData.IsSetup && renderData.SetupParts != null) {
+                foreach (var (partId, _) in renderData.SetupParts) {
+                    context.ObjectManager.GetRenderData(partId, false);
+                }
+            }
+
+            var objects = new List<StaticObject> { drawObj };
+            RenderStaticObjects(context, objects, camera, viewProjection);
+        }
+
+        private unsafe void RenderSelectionBounds(SceneContext context, Vector4 bounds, ICamera camera, Matrix4x4 viewProjection, TerrainEditingContext editingContext) {
+            var corners = new Vector4[4];
+            float scaleFactor = 1.0f;
+            if (camera is OrthographicTopDownCamera ortho) {
+                scaleFactor = Math.Max(1.0f, ortho.OrthographicSize * 0.005f);
+            }
+            else {
+                scaleFactor = Math.Max(1.0f, MathF.Abs(camera.Position.Z) * 0.005f);
+            }
+            float radius = 1.0f * scaleFactor;
+            corners[0] = new Vector4(bounds.X, bounds.Y, editingContext.GetHeightAtPosition(bounds.X, bounds.Y), radius);
+            corners[1] = new Vector4(bounds.Z, bounds.Y, editingContext.GetHeightAtPosition(bounds.Z, bounds.Y), radius);
+            corners[2] = new Vector4(bounds.Z, bounds.W, editingContext.GetHeightAtPosition(bounds.Z, bounds.W), radius);
+            corners[3] = new Vector4(bounds.X, bounds.W, editingContext.GetHeightAtPosition(bounds.X, bounds.W), radius);
+
+            var gl = context.Renderer.GraphicsDevice.GL;
+            gl.Enable(EnableCap.Blend);
+            gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+            context.SphereShader.Bind();
+            context.SphereShader.SetUniform("uViewProjection", viewProjection);
+            context.SphereShader.SetUniform("uCameraPosition", camera.Position);
+            context.SphereShader.SetUniform("uSphereColor", new Vector3(0.0f, 1.0f, 0.0f));
+            context.SphereShader.SetUniform("uLightDirection", Vector3.Normalize(LightDirection));
+            context.SphereShader.SetUniform("uAmbientIntensity", 0.8f);
+            context.SphereShader.SetUniform("uSpecularPower", SpecularPower);
+            context.SphereShader.SetUniform("uGlowColor", new Vector3(0.0f, 1.0f, 0.0f));
+            context.SphereShader.SetUniform("uGlowIntensity", 1.0f);
+            context.SphereShader.SetUniform("uGlowPower", 0.5f);
+            gl.BindBuffer(GLEnum.ArrayBuffer, context.SphereInstanceVBO);
+            fixed (Vector4* ptr = corners) {
+                gl.BufferData(GLEnum.ArrayBuffer, (nuint)(4 * sizeof(Vector4)), ptr, GLEnum.DynamicDraw);
+            }
+            gl.BindVertexArray(context.SphereVAO);
+            gl.DrawElementsInstanced(GLEnum.Triangles, (uint)context.SphereIndexCount, GLEnum.UnsignedInt, null, 4);
+            gl.BindVertexArray(0);
+            gl.UseProgram(0);
+            gl.Disable(EnableCap.Blend);
+        }
+
+        private unsafe void RenderSky(SceneContext context) {
+            var gl = context.Renderer.GraphicsDevice.GL;
+            gl.Disable(EnableCap.DepthTest);
+            gl.DepthMask(false);
+            gl.Disable(EnableCap.CullFace);
+
+            context.SkyShader.Bind();
+            context.SkyShader.SetUniform("uZenithColor", SkyZenithColor);
+            context.SkyShader.SetUniform("uHorizonColor", SkyHorizonColor);
+
+            gl.BindVertexArray(context.SkyVAO);
+            gl.DrawElements(GLEnum.Triangles, 6, GLEnum.UnsignedInt, null);
+            gl.BindVertexArray(0);
+
+            gl.Enable(EnableCap.DepthTest);
+            gl.DepthMask(true);
+            gl.Enable(EnableCap.CullFace);
+        }
+
+        private void RenderTerrain(
+            SceneContext context,
+            IEnumerable<(TerrainChunk chunk, ChunkRenderData renderData)> renderableChunks,
+            Matrix4x4 model,
+            ICamera camera,
+            float cameraDistance,
+            float width,
+            float height,
+            TerrainEditingContext? editingContext = null) {
+
+            context.TerrainShader.Bind();
+            context.TerrainShader.SetUniform("xAmbient", AmbientLightIntensity);
+            context.TerrainShader.SetUniform("xLightDirection", Vector3.Normalize(LightDirection));
+            context.TerrainShader.SetUniform("xWorld", model);
+            context.TerrainShader.SetUniform("xView", camera.GetViewMatrix());
+            context.TerrainShader.SetUniform("xProjection", camera.GetProjectionMatrix());
+            context.TerrainShader.SetUniform("uAlpha", 1f);
+            context.TerrainShader.SetUniform("uShowLandblockGrid", ShowGrid ? 1 : 0);
+            context.TerrainShader.SetUniform("uShowCellGrid", ShowGrid ? 1 : 0);
+            context.TerrainShader.SetUniform("uLandblockGridColor", LandblockGridColor);
+            context.TerrainShader.SetUniform("uCellGridColor", CellGridColor);
+            context.TerrainShader.SetUniform("uGridLineWidth", GridLineWidth);
+            context.TerrainShader.SetUniform("uGridOpacity", GridOpacity);
+            context.TerrainShader.SetUniform("uCameraDistance", cameraDistance);
+            context.TerrainShader.SetUniform("uScreenHeight", height);
+
+            context.TerrainShader.SetUniform("uShowSlopeHighlight", ShowSlopeHighlight ? 1 : 0);
+            context.TerrainShader.SetUniform("uSlopeThreshold", SlopeThreshold * MathF.PI / 180f);
+            context.TerrainShader.SetUniform("uSlopeHighlightColor", SlopeHighlightColor);
+            context.TerrainShader.SetUniform("uSlopeHighlightOpacity", SlopeHighlightOpacity);
+
+            bool brushActive = editingContext?.BrushActive ?? false;
+            context.TerrainShader.SetUniform("uBrushActive", brushActive ? 1 : 0);
+            if (brushActive) {
+                context.TerrainShader.SetUniform("uBrushCenter", editingContext!.BrushCenter);
+                float worldRadius = (editingContext.BrushRadius * 12f) + 1f;
+                context.TerrainShader.SetUniform("uBrushRadius", worldRadius);
+                context.TerrainShader.SetUniform("uBrushFalloff", editingContext.BrushFalloff);
+            }
+
+            int previewIdx = editingContext?.PreviewTextureAtlasIndex ?? -1;
+            context.TerrainShader.SetUniform("uPreviewActive", previewIdx >= 0 ? 1 : 0);
+            context.TerrainShader.SetUniform("uPreviewTexIndex", (float)previewIdx);
+
+            float tanHalfFov = MathF.Tan(WorldBuilder.Lib.MathHelper.DegreesToRadians(PerspectiveCamera.fov * 0.5f));
+            context.TerrainShader.SetUniform("uTanHalfFov", tanHalfFov);
+            context.TerrainShader.SetUniform("uFogEnabled", FogEnabled ? 1 : 0);
+            context.TerrainShader.SetUniform("uFogColor", SkyHorizonColor);
+            context.TerrainShader.SetUniform("uFogStart", FogStart);
+            context.TerrainShader.SetUniform("uFogEnd", FogEnd);
+            context.TerrainShader.SetUniform("uCameraPos2D", new Vector2(camera.Position.X, camera.Position.Y));
+
+            SurfaceManager.GetTerrainAtlas(context.Renderer).Bind(0);
+            context.TerrainShader.SetUniform("xOverlays", 0);
+            context.TerrainShader.SetUniform("uTerrainTiling", SurfaceManager.TerrainAtlasTilingByLayer.ToArray());
+            SurfaceManager.GetAlphaAtlas(context.Renderer).Bind(1);
+            context.TerrainShader.SetUniform("xAlphas", 1);
+
+            foreach (var (_, renderData) in renderableChunks) {
+                renderData.ArrayBuffer.Bind();
+                renderData.VertexBuffer.Bind();
+                renderData.IndexBuffer.Bind();
+                GLHelpers.CheckErrors();
+                context.Renderer.GraphicsDevice.DrawElements(Acme.Render.Enums.PrimitiveType.TriangleList,
+                    renderData.TotalIndexCount);
+                renderData.ArrayBuffer.Unbind();
+                renderData.VertexBuffer.Unbind();
+                renderData.IndexBuffer.Unbind();
+            }
+        }
+
+        private unsafe void RenderActiveSpheres(
+            SceneContext context,
+            TerrainEditingContext editingContext,
+            ICamera camera,
+            Matrix4x4 model,
+            Matrix4x4 viewProjection) {
+
+            var gl = context.Renderer.GraphicsDevice.GL;
+            var activeVerts = editingContext.ActiveVertices.ToArray();
+            if (activeVerts.Length == 0) return;
+
+            int count = activeVerts.Length;
+            var instances = new Vector4[count];
+            for (int i = 0; i < count; i++) {
+                try {
+                    var vertex = activeVerts[i];
+                    instances[i] = new Vector4(
+                        vertex.X,
+                        vertex.Y,
+                        DataManager.GetHeightAtPosition(vertex.X, vertex.Y) + SphereHeightOffset,
+                        SphereRadius);
+                }
+                catch {
+                    instances[i] = new Vector4(0, 0, 0, SphereRadius);
+                }
+            }
+
+            gl.Enable(EnableCap.Blend);
+            gl.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+
+            context.SphereShader.Bind();
+            context.SphereShader.SetUniform("uViewProjection", viewProjection);
+            context.SphereShader.SetUniform("uCameraPosition", camera.Position);
+            context.SphereShader.SetUniform("uSphereColor", SphereColor);
+            Vector3 normLight = Vector3.Normalize(LightDirection);
+            context.SphereShader.SetUniform("uLightDirection", normLight);
+            context.SphereShader.SetUniform("uAmbientIntensity", AmbientLightIntensity);
+            context.SphereShader.SetUniform("uSpecularPower", SpecularPower);
+            context.SphereShader.SetUniform("uGlowColor", SphereGlowColor);
+            context.SphereShader.SetUniform("uGlowIntensity", SphereGlowIntensity);
+            context.SphereShader.SetUniform("uGlowPower", SphereGlowPower);
+
+            gl.BindBuffer(GLEnum.ArrayBuffer, context.SphereInstanceVBO);
+            fixed (Vector4* ptr = instances) {
+                gl.BufferData(GLEnum.ArrayBuffer, (nuint)(count * sizeof(Vector4)), ptr, GLEnum.DynamicDraw);
+            }
+
+            gl.BindVertexArray(context.SphereVAO);
+            gl.DrawElementsInstanced(GLEnum.Triangles, (uint)context.SphereIndexCount, GLEnum.UnsignedInt, null, (uint)count);
+            gl.BindVertexArray(0);
+            gl.UseProgram(0);
+            gl.Disable(EnableCap.Blend);
+        }
+
+
+        private static void EnsureUploadBuffer(SceneContext context, int requiredFloats) {
+            if (context.InstanceUploadBuffer.Length < requiredFloats) {
+                int newSize = (int)BitOperations.RoundUpToPowerOf2((uint)Math.Max(requiredFloats, 256));
+                var newBuf = new float[newSize];
+                Array.Copy(context.InstanceUploadBuffer, newBuf, context.InstanceUploadBuffer.Length);
+                context.InstanceUploadBuffer = newBuf;
+            }
+        }
+
+        private static void WriteMatrixToBuffer(float[] buf, int offset, in Matrix4x4 m) {
+            buf[offset +  0] = m.M11; buf[offset +  1] = m.M12; buf[offset +  2] = m.M13; buf[offset +  3] = m.M14;
+            buf[offset +  4] = m.M21; buf[offset +  5] = m.M22; buf[offset +  6] = m.M23; buf[offset +  7] = m.M24;
+            buf[offset +  8] = m.M31; buf[offset +  9] = m.M32; buf[offset + 10] = m.M33; buf[offset + 11] = m.M34;
+            buf[offset + 12] = m.M41; buf[offset + 13] = m.M42; buf[offset + 14] = m.M43; buf[offset + 15] = m.M44;
+        }
+
+        private static void SetCompositedAlphaBlend(GL gl, bool additiveBlend = false) {
+            if (additiveBlend) {
+                gl.BlendFuncSeparate(
+                    BlendingFactor.SrcAlpha,
+                    BlendingFactor.One,
+                    BlendingFactor.One,
+                    BlendingFactor.OneMinusSrcAlpha);
+            }
+            else {
+                gl.BlendFuncSeparate(
+                    BlendingFactor.SrcAlpha,
+                    BlendingFactor.OneMinusSrcAlpha,
+                    BlendingFactor.One,
+                    BlendingFactor.OneMinusSrcAlpha);
+            }
+        }
+
+        private unsafe void RenderStaticObjectsPreTransformed(SceneContext context, List<StaticObject> objects, List<Matrix4x4> transforms, ICamera camera, Matrix4x4 viewProjection, bool additiveBlend = false) {
+            var gl = context.Renderer.GraphicsDevice.GL;
+            gl.Enable(EnableCap.DepthTest);
+            gl.Enable(EnableCap.Blend);
+            if (additiveBlend) {
+                SetCompositedAlphaBlend(gl, additiveBlend: true);
+                gl.DepthMask(false);
+            }
+            else {
+                SetCompositedAlphaBlend(gl);
+            }
+            gl.Enable(EnableCap.CullFace);
+            gl.CullFace(TriangleFace.Back);
+
+            var objectManager = context.ObjectManager;
+            objectManager._objectShader.Bind();
+            objectManager._objectShader.SetUniform("uViewProjection", viewProjection);
+            objectManager._objectShader.SetUniform("uCameraPosition", camera.Position);
+            objectManager._objectShader.SetUniform("uLightDirection", Vector3.Normalize(LightDirection));
+            objectManager._objectShader.SetUniform("uAmbientIntensity", AmbientLightIntensity);
+            objectManager._objectShader.SetUniform("uSpecularPower", SpecularPower);
+            objectManager._objectShader.SetUniform("uHighlightColor", Vector3.Zero);
+            objectManager._objectShader.SetUniform("uHighlightIntensity", 0f);
+            objectManager._objectShader.SetUniform("uFogEnabled", FogEnabled ? 1 : 0);
+            objectManager._objectShader.SetUniform("uFogColor", SkyHorizonColor);
+            objectManager._objectShader.SetUniform("uFogStart", FogStart);
+            objectManager._objectShader.SetUniform("uFogEnd", FogEnd);
+
+            foreach (var list in _objectGroupBuffer.Values) list.Clear();
+            for (int i = 0; i < objects.Count; i++) {
+                var key = (objects[i].Id, objects[i].IsSetup);
+                if (!_objectGroupBuffer.TryGetValue(key, out var list)) {
+                    list = new List<Matrix4x4>();
+                    _objectGroupBuffer[key] = list;
+                }
+                list.Add(transforms[i]);
+            }
+
+            _batchDrawPlan.Clear();
+            int totalFloats = 0;
+
+            foreach (var group in _objectGroupBuffer) {
+                if (group.Value.Count == 0) continue;
+                var (id, isSetup) = group.Key;
+
+                var renderData = objectManager.TryGetCachedRenderData(id);
+                if (renderData == null) {
+                    if (!context.ModelsPreparing.Contains(id) && !objectManager.IsKnownFailure(id)) {
+                        context.ModelWarmupQueue.Enqueue((id, isSetup));
+                    }
+                    continue;
+                }
+
+                if (isSetup && renderData.SetupParts != null) {
+                    foreach (var (partId, partTransform) in renderData.SetupParts) {
+                        var partRenderData = objectManager.TryGetCachedRenderData(partId);
+                        if (partRenderData == null) continue;
+
+                        int offset = totalFloats;
+                        int needed = totalFloats + group.Value.Count * 16;
+                        EnsureUploadBuffer(context, needed);
+
+                        foreach (var instanceMatrix in group.Value) {
+                            var m = partTransform * instanceMatrix;
+                            WriteMatrixToBuffer(context.InstanceUploadBuffer, totalFloats, in m);
+                            totalFloats += 16;
+                        }
+
+                        _batchDrawPlan.Add(new BatchDrawEntry {
+                            VAO = partRenderData.VAO,
+                            Batches = partRenderData.Batches,
+                            InstanceCount = group.Value.Count,
+                            BufferFloatOffset = offset
+                        });
+                    }
+                }
+                else {
+                    int offset = totalFloats;
+                    int needed = totalFloats + group.Value.Count * 16;
+                    EnsureUploadBuffer(context, needed);
+
+                    foreach (var m in group.Value) {
+                        WriteMatrixToBuffer(context.InstanceUploadBuffer, totalFloats, in m);
+                        totalFloats += 16;
+                    }
+
+                    _batchDrawPlan.Add(new BatchDrawEntry {
+                        VAO = renderData.VAO,
+                        Batches = renderData.Batches,
+                        InstanceCount = group.Value.Count,
+                        BufferFloatOffset = offset
+                    });
+                }
+            }
+
+            if (totalFloats == 0) {
+                gl.UseProgram(0);
+                return;
+            }
+
+            if (context.InstanceVBO == 0) {
+                gl.GenBuffers(1, out uint vbo);
+                context.InstanceVBO = vbo;
+            }
+
+            gl.BindBuffer(GLEnum.ArrayBuffer, context.InstanceVBO);
+            fixed (float* ptr = context.InstanceUploadBuffer) {
+                if (totalFloats > context.InstanceBufferCapacity) {
+                    int newCapacity = (int)BitOperations.RoundUpToPowerOf2((uint)Math.Max(totalFloats, 256));
+                    context.InstanceBufferCapacity = newCapacity;
+                    gl.BufferData(GLEnum.ArrayBuffer, (nuint)(newCapacity * sizeof(float)), ptr, GLEnum.DynamicDraw);
+                }
+                else {
+                    gl.BufferSubData(GLEnum.ArrayBuffer, 0, (nuint)(totalFloats * sizeof(float)), ptr);
+                }
+            }
+
+            bool cullFaceEnabled = true;
+            foreach (var entry in _batchDrawPlan) {
+                gl.BindVertexArray(entry.VAO);
+
+                int byteOffset = entry.BufferFloatOffset * sizeof(float);
+                gl.BindBuffer(GLEnum.ArrayBuffer, context.InstanceVBO);
+                for (int i = 0; i < 4; i++) {
+                    gl.EnableVertexAttribArray((uint)(3 + i));
+                    gl.VertexAttribPointer((uint)(3 + i), 4, GLEnum.Float, false,
+                        (uint)(16 * sizeof(float)), (void*)(byteOffset + i * 4 * sizeof(float)));
+                    gl.VertexAttribDivisor((uint)(3 + i), 1);
+                }
+
+                foreach (var batch in entry.Batches) {
+                    if (batch.TextureArray == null) continue;
+
+                    if (batch.IsDoubleSided && cullFaceEnabled) {
+                        gl.Disable(EnableCap.CullFace);
+                        cullFaceEnabled = false;
+                    }
+                    else if (!batch.IsDoubleSided && !cullFaceEnabled) {
+                        gl.Enable(EnableCap.CullFace);
+                        cullFaceEnabled = true;
+                    }
+
+                    batch.TextureArray.Bind(0);
+                    objectManager._objectShader.SetUniform("uTextureArray", 0);
+                    objectManager._objectShader.SetUniform("uTextureIndex", (float)batch.TextureIndex);
+                    gl.DisableVertexAttribArray(7);
+                    gl.VertexAttrib1((uint)7, (float)batch.TextureIndex);
+
+                    gl.BindBuffer(GLEnum.ElementArrayBuffer, batch.IBO);
+                    gl.DrawElementsInstanced(GLEnum.Triangles, (uint)batch.IndexCount, GLEnum.UnsignedShort, null, (uint)entry.InstanceCount);
+                }
+            }
+
+            if (!cullFaceEnabled) gl.Enable(EnableCap.CullFace);
+            gl.BindVertexArray(0);
+            gl.UseProgram(0);
+            gl.Disable(EnableCap.Blend);
+            if (additiveBlend) gl.DepthMask(true);
+        }
+
+        private unsafe void RenderStaticObjects(SceneContext context, List<StaticObject> objects, ICamera camera, Matrix4x4 viewProjection) {
+            var gl = context.Renderer.GraphicsDevice.GL;
+            gl.Enable(EnableCap.DepthTest);
+            gl.Enable(EnableCap.Blend);
+            SetCompositedAlphaBlend(gl);
+            gl.Enable(EnableCap.CullFace);
+            gl.CullFace(TriangleFace.Back);
+
+            var objectManager = context.ObjectManager;
+            objectManager._objectShader.Bind();
+            objectManager._objectShader.SetUniform("uViewProjection", viewProjection);
+            objectManager._objectShader.SetUniform("uCameraPosition", camera.Position);
+            objectManager._objectShader.SetUniform("uLightDirection", Vector3.Normalize(LightDirection));
+            objectManager._objectShader.SetUniform("uAmbientIntensity", AmbientLightIntensity);
+            objectManager._objectShader.SetUniform("uSpecularPower", SpecularPower);
+            objectManager._objectShader.SetUniform("uHighlightColor", Vector3.Zero);
+            objectManager._objectShader.SetUniform("uHighlightIntensity", 0f);
+            objectManager._objectShader.SetUniform("uFogEnabled", FogEnabled ? 1 : 0);
+            objectManager._objectShader.SetUniform("uFogColor", SkyHorizonColor);
+            objectManager._objectShader.SetUniform("uFogStart", FogStart);
+            objectManager._objectShader.SetUniform("uFogEnd", FogEnd);
+
+            foreach (var list in _objectGroupBuffer.Values) list.Clear();
+            foreach (var obj in objects) {
+                var key = (obj.Id, obj.IsSetup);
+                if (!_objectGroupBuffer.TryGetValue(key, out var list)) {
+                    list = new List<Matrix4x4>();
+                    _objectGroupBuffer[key] = list;
+                }
+                list.Add(
+                    Matrix4x4.CreateScale(obj.Scale)
+                    * Matrix4x4.CreateFromQuaternion(obj.Orientation)
+                    * Matrix4x4.CreateTranslation(obj.Origin));
+            }
+
+            foreach (var group in _objectGroupBuffer) {
+                if (group.Value.Count == 0) continue;
+                var (id, isSetup) = group.Key;
+
+                var renderData = objectManager.TryGetCachedRenderData(id);
+                if (renderData == null) continue;
+
+                if (isSetup) {
+                    foreach (var (partId, partTransform) in renderData.SetupParts) {
+                        var partRenderData = objectManager.TryGetCachedRenderData(partId);
+                        if (partRenderData == null) continue;
+
+                        _tempInstanceTransforms.Clear();
+                        foreach (var instanceMatrix in group.Value) {
+                            _tempInstanceTransforms.Add(partTransform * instanceMatrix);
+                        }
+
+                        RenderBatchedObject(context, partRenderData, _tempInstanceTransforms);
+                    }
+                }
+                else {
+                    RenderBatchedObject(context, renderData, group.Value);
+                }
+            }
+
+            gl.BindVertexArray(0);
+            gl.UseProgram(0);
+            gl.Disable(EnableCap.Blend);
+        }
+
+        private unsafe void RenderBatchedObject(SceneContext context, StaticObjectRenderData renderData, List<Matrix4x4> instanceTransforms) {
+            if (instanceTransforms.Count == 0 || renderData.Batches.Count == 0) return;
+            var gl = context.Renderer.GraphicsDevice.GL;
+
+            int requiredFloats = instanceTransforms.Count * 16;
+
+            if (context.InstanceUploadBuffer.Length < requiredFloats) {
+                int newSize = Math.Max(requiredFloats, 256);
+                newSize = (int)BitOperations.RoundUpToPowerOf2((uint)newSize);
+                context.InstanceUploadBuffer = new float[newSize];
+            }
+
+            for (int i = 0; i < instanceTransforms.Count; i++) {
+                var transform = instanceTransforms[i];
+                int offset = i * 16;
+                context.InstanceUploadBuffer[offset +  0] = transform.M11; context.InstanceUploadBuffer[offset +  1] = transform.M12;
+                context.InstanceUploadBuffer[offset +  2] = transform.M13; context.InstanceUploadBuffer[offset +  3] = transform.M14;
+                context.InstanceUploadBuffer[offset +  4] = transform.M21; context.InstanceUploadBuffer[offset +  5] = transform.M22;
+                context.InstanceUploadBuffer[offset +  6] = transform.M23; context.InstanceUploadBuffer[offset +  7] = transform.M24;
+                context.InstanceUploadBuffer[offset +  8] = transform.M31; context.InstanceUploadBuffer[offset +  9] = transform.M32;
+                context.InstanceUploadBuffer[offset + 10] = transform.M33; context.InstanceUploadBuffer[offset + 11] = transform.M34;
+                context.InstanceUploadBuffer[offset + 12] = transform.M41; context.InstanceUploadBuffer[offset + 13] = transform.M42;
+                context.InstanceUploadBuffer[offset + 14] = transform.M43; context.InstanceUploadBuffer[offset + 15] = transform.M44;
+            }
+
+            if (context.InstanceVBO == 0) {
+                gl.GenBuffers(1, out uint vbo);
+                context.InstanceVBO = vbo;
+            }
+
+            gl.BindBuffer(GLEnum.ArrayBuffer, context.InstanceVBO);
+
+            if (requiredFloats > context.InstanceBufferCapacity) {
+                int newCapacity = Math.Max(requiredFloats, 256);
+                newCapacity = (int)BitOperations.RoundUpToPowerOf2((uint)newCapacity);
+                context.InstanceBufferCapacity = newCapacity;
+                fixed (float* ptr = context.InstanceUploadBuffer) {
+                    gl.BufferData(GLEnum.ArrayBuffer, (nuint)(newCapacity * sizeof(float)), ptr, GLEnum.DynamicDraw);
+                }
+            }
+            else {
+                fixed (float* ptr = context.InstanceUploadBuffer) {
+                    gl.BufferSubData(GLEnum.ArrayBuffer, 0, (nuint)(requiredFloats * sizeof(float)), ptr);
+                }
+            }
+
+            gl.BindVertexArray(renderData.VAO);
+
+            if (!context.ConfiguredInstanceVAOs.Contains(renderData.VAO)) {
+                gl.BindBuffer(GLEnum.ArrayBuffer, context.InstanceVBO);
+                for (int i = 0; i < 4; i++) {
+                    gl.EnableVertexAttribArray((uint)(3 + i));
+                    gl.VertexAttribPointer((uint)(3 + i), 4, GLEnum.Float, false, (uint)(16 * sizeof(float)), (void*)(i * 4 * sizeof(float)));
+                    gl.VertexAttribDivisor((uint)(3 + i), 1);
+                }
+                context.ConfiguredInstanceVAOs.Add(renderData.VAO);
+            }
+
+            bool cullFaceEnabled = true;
+            foreach (var batch in renderData.Batches) {
+                if (batch.TextureArray == null) continue;
+
+                try {
+                    if (batch.IsDoubleSided && cullFaceEnabled) {
+                        gl.Disable(EnableCap.CullFace);
+                        cullFaceEnabled = false;
+                    }
+                    else if (!batch.IsDoubleSided && !cullFaceEnabled) {
+                        gl.Enable(EnableCap.CullFace);
+                        cullFaceEnabled = true;
+                    }
+
+                    batch.TextureArray.Bind(0);
+                    context.ObjectManager._objectShader.SetUniform("uTextureArray", 0);
+                    context.ObjectManager._objectShader.SetUniform("uTextureIndex", (float)batch.TextureIndex);
+                    // Shader samples layer from attribute 7 (aTextureIndex); set constant so we don't use stale value from EnvCell or previous object
+                    gl.DisableVertexAttribArray(7);
+                    gl.VertexAttrib1((uint)7, (float)batch.TextureIndex);
+
+                    gl.BindBuffer(GLEnum.ElementArrayBuffer, batch.IBO);
+                    gl.DrawElementsInstanced(GLEnum.Triangles, (uint)batch.IndexCount, GLEnum.UnsignedShort, null, (uint)instanceTransforms.Count);
+                }
+                catch (Exception ex) {
+                    Console.WriteLine($"Error rendering batch (texture index {batch.TextureIndex}): {ex.Message}");
+                }
+            }
+
+            if (!cullFaceEnabled) {
+                gl.Enable(EnableCap.CullFace);
+            }
+
+            gl.BindVertexArray(0);
+        }
+
+        public void SaveCameraState() {
+            var cam = _settings.Landscape.Camera;
+            var pos = PerspectiveCamera.Position;
+            cam.SavedPositionX = pos.X;
+            cam.SavedPositionY = pos.Y;
+            cam.SavedPositionZ = pos.Z;
+            cam.SavedYaw = PerspectiveCamera.Yaw;
+            cam.SavedPitch = PerspectiveCamera.Pitch;
+            cam.SavedOrthoSize = TopDownCamera.OrthographicSize;
+            cam.SavedIs3D = true;
+            _settings.Save();
+        }
+
+        public void Dispose() {
+            SaveCameraState();
+            if (!_disposed) {
+                foreach (var kvp in _contexts) {
+                    kvp.Value.Dispose();
+                    SurfaceManager.UnregisterRenderer(kvp.Key);
+                }
+                _contexts.Clear();
+                _thumbnailService?.Dispose();
+                _disposed = true;
+            }
+        }
+    }
+}

@@ -1,0 +1,175 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:docking="clr-namespace:WorldBuilder.Lib.Docking"
+             xmlns:conv="clr-namespace:WorldBuilder.Lib.Converters"
+             mc:Ignorable="d"
+             x:Class="WorldBuilder.Lib.Docking.DockRegionView"
+             x:Name="Root"
+             x:CompileBindings="False">
+
+    <UserControl.Styles>
+        <Style Selector="Button.tab-panel-btn">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="4,2" />
+            <Setter Property="MinWidth" Value="22" />
+            <Setter Property="MinHeight" Value="22" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Foreground" Value="#6a5a7e" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+        </Style>
+        <Style Selector="Button.tab-panel-btn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#2a1545" />
+            <Setter Property="Foreground" Value="#c0b0d8" />
+        </Style>
+        <Style Selector="Button.tab-panel-btn:pressed /template/ ContentPresenter">
+            <Setter Property="Background" Value="#351a55" />
+        </Style>
+        <Style Selector="Button.tab-panel-btn-close:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#5c2020" />
+            <Setter Property="Foreground" Value="#ff8888" />
+        </Style>
+        <Style Selector="TabStrip.dock-strip">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+        <Style Selector="TabStrip.dock-strip > TabItem">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#8a7a9e" />
+            <Setter Property="Padding" Value="10,7" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="TabStrip.dock-strip > TabItem:pointerover">
+            <Setter Property="Foreground" Value="#c0b0d8" />
+            <Setter Property="Background" Value="#1e1035" />
+        </Style>
+        <Style Selector="TabStrip.dock-strip > TabItem:selected">
+            <Setter Property="Foreground" Value="#d4a843" />
+            <Setter Property="Background" Value="#1a1028" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid>
+        <DockPanel IsVisible="{Binding IsTabbed, ElementName=Root}">
+            <Border DockPanel.Dock="Top"
+                    Background="#140a20"
+                    BorderBrush="#2a1d42"
+                    BorderThickness="0,0,0,1"
+                    Padding="4,2,4,2"
+                    MinHeight="36">
+                <DockPanel>
+                    <StackPanel DockPanel.Dock="Right"
+                                Orientation="Horizontal"
+                                Spacing="0"
+                                VerticalAlignment="Center">
+                        <Button Classes="tab-panel-btn"
+                                ToolTip.Tip="Move this panel"
+                                IsEnabled="{Binding #Tabs.SelectedItem, Converter={x:Static conv:ObjectConverters.IsNotNull}}">
+                            <TextBlock Text="&#x2630;" FontSize="11" />
+                            <Button.Flyout>
+                                <MenuFlyout Placement="BottomEdgeAlignedRight">
+                                    <MenuItem Header="Dock Left"
+                                              Command="{Binding #Tabs.SelectedItem.DockToCommand}"
+                                              CommandParameter="Left" />
+                                    <MenuItem Header="Dock Right"
+                                              Command="{Binding #Tabs.SelectedItem.DockToCommand}"
+                                              CommandParameter="Right" />
+                                    <MenuItem Header="Dock Top"
+                                              Command="{Binding #Tabs.SelectedItem.DockToCommand}"
+                                              CommandParameter="Top" />
+                                    <MenuItem Header="Dock Bottom"
+                                              Command="{Binding #Tabs.SelectedItem.DockToCommand}"
+                                              CommandParameter="Bottom" />
+                                    <Separator />
+                                    <MenuItem Header="Center"
+                                              Command="{Binding #Tabs.SelectedItem.DockToCommand}"
+                                              CommandParameter="Center" />
+                                    <MenuItem Header="Float"
+                                              Command="{Binding #Tabs.SelectedItem.FloatCommand}" />
+                                    <Separator />
+                                    <MenuItem Header="Move Left / Up"
+                                              Command="{Binding #Tabs.SelectedItem.MoveUpCommand}" />
+                                    <MenuItem Header="Move Right / Down"
+                                              Command="{Binding #Tabs.SelectedItem.MoveDownCommand}" />
+                                </MenuFlyout>
+                            </Button.Flyout>
+                        </Button>
+                        <Button Classes="tab-panel-btn tab-panel-btn-close"
+                                Content="&#x2715;"
+                                ToolTip.Tip="Close panel"
+                                Command="{Binding #Tabs.SelectedItem.CloseCommand}" />
+                        <Button Classes="tab-panel-btn"
+                                Command="{Binding ToggleModeCommand, ElementName=Root}"
+                                ToolTip.Tip="Toggle tabbed / sections layout">
+                            <TextBlock Text="&#x229E;" FontSize="12" />
+                        </Button>
+                    </StackPanel>
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                  VerticalScrollBarVisibility="Disabled">
+                        <TabStrip x:Name="Tabs"
+                                  Classes="dock-strip"
+                                  ItemsSource="{Binding Panels, ElementName=Root}">
+                            <TabStrip.ItemTemplate>
+                                <DataTemplate x:DataType="docking:IDockable">
+                                    <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
+                                </DataTemplate>
+                            </TabStrip.ItemTemplate>
+                        </TabStrip>
+                    </ScrollViewer>
+                </DockPanel>
+            </Border>
+            <ContentControl Content="{Binding #Tabs.SelectedItem.Content}" />
+        </DockPanel>
+
+        <DockPanel IsVisible="{Binding IsSectioned, ElementName=Root}">
+            <Border DockPanel.Dock="Top"
+                    Background="#140a20"
+                    BorderBrush="#2a1d42"
+                    BorderThickness="0,0,0,1"
+                    Padding="4,2"
+                    MinHeight="36">
+                <Button HorizontalAlignment="Right"
+                        Classes="tab-panel-btn"
+                        Command="{Binding ToggleModeCommand, ElementName=Root}"
+                        ToolTip.Tip="Toggle tabbed / sections layout">
+                    <TextBlock Text="&#x229E;" FontSize="12" />
+                </Button>
+            </Border>
+            <Grid>
+                <ItemsControl ItemsSource="{Binding Panels, ElementName=Root}"
+                              IsVisible="{Binding StackSectionsVertically, ElementName=Root}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <UniformGrid Columns="1" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="docking:DockablePanelViewModel">
+                            <docking:DockablePanelView />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <ItemsControl ItemsSource="{Binding Panels, ElementName=Root}"
+                              IsVisible="{Binding StackSectionsVertically, ElementName=Root, Converter={x:Static conv:BoolConverters.Not}}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <UniformGrid Rows="1" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="docking:DockablePanelViewModel">
+                            <docking:DockablePanelView />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Grid>
+        </DockPanel>
+    </Grid>
+</UserControl>

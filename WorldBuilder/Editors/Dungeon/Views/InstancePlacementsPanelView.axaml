@@ -1,0 +1,104 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WorldBuilder.Editors.Dungeon"
+             x:Class="WorldBuilder.Editors.Dungeon.Views.InstancePlacementsPanelView"
+             x:DataType="vm:InstancePlacementsPanelViewModel">
+    <UserControl.Styles>
+        <Style Selector="Button.dng-toolbar-btn">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Foreground" Value="#8a7a9e" />
+        </Style>
+        <Style Selector="Button.dng-toolbar-btn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#33ffffff" />
+            <Setter Property="Foreground" Value="#c0b0d8" />
+        </Style>
+    </UserControl.Styles>
+
+    <ScrollViewer>
+        <StackPanel Spacing="8" Margin="8">
+            <StackPanel Spacing="8" IsVisible="{Binding HasDungeon}">
+            <TextBlock Text="Instance Placements"
+                       FontSize="12" FontWeight="SemiBold" Foreground="#d4a843" />
+            <TextBlock Text="Browse weenies in the Object Browser (Load Weenies), or enter a WCID manually below."
+                       FontSize="10" Foreground="#6a5a7e" TextWrapping="Wrap" />
+
+            <Border Background="#16102a" BorderBrush="#2a1d42" BorderThickness="1" Padding="8" CornerRadius="4">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Weenie Class ID (hex or decimal) — or pick from list above" FontSize="10" Foreground="#8a7a9e" />
+                    <TextBox Text="{Binding NewPlacementWcid}" Watermark="e.g. 41979 or 0xA3F7" FontSize="11" Padding="4,3" />
+
+                    <TextBlock Text="Room (cell)" FontSize="10" Foreground="#8a7a9e" />
+                    <ComboBox ItemsSource="{Binding InstancePlacementCellNumbers}"
+                              SelectedItem="{Binding NewPlacementCellNumber}"
+                              FontSize="11" />
+
+                    <TextBlock Text="Position (cell-relative)" FontSize="10" Foreground="#8a7a9e" />
+                    <Grid ColumnDefinitions="*,*,*">
+                        <TextBox Grid.Column="0" Text="{Binding NewPlacementX}" Watermark="X" FontSize="10" Padding="3,2" Margin="0,0,2,0" />
+                        <TextBox Grid.Column="1" Text="{Binding NewPlacementY}" Watermark="Y" FontSize="10" Padding="3,2" Margin="2,0" />
+                        <TextBox Grid.Column="2" Text="{Binding NewPlacementZ}" Watermark="Z" FontSize="10" Padding="3,2" Margin="2,0,0,0" />
+                    </Grid>
+
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button Classes="dng-toolbar-btn" Content="Add placement" Command="{Binding AddInstancePlacementCommand}"
+                                Foreground="#6ec07a" />
+                        <Button Classes="dng-toolbar-btn" Content="Use selected room" Command="{Binding AddPlacementAtSelectedRoomCommand}"
+                                ToolTip.Tip="Prefill room and position from selected room" Foreground="#4dbd7c" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <TextBlock Text="Placements" FontSize="11" Foreground="#8a7a9e" />
+            <ItemsControl ItemsSource="{Binding InstancePlacementItems}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:InstancePlacementItemViewModel">
+                        <Border Padding="6,4" Margin="0,0,0,4" CornerRadius="3" BorderThickness="1"
+                                Classes.selected="{Binding IsSelected}"
+                                ToolTip.Tip="Click in the 3D viewport to select. Press Delete to remove selected.">
+                            <Border.Styles>
+                                <Style Selector="Border">
+                                    <Setter Property="Background" Value="#1a0e30" />
+                                    <Setter Property="BorderBrush" Value="#2a1d42" />
+                                </Style>
+                                <Style Selector="Border.selected">
+                                    <Setter Property="Background" Value="#281640" />
+                                    <Setter Property="BorderBrush" Value="#d4a843" />
+                                </Style>
+                            </Border.Styles>
+                            <DockPanel>
+                                <Button DockPanel.Dock="Right" Classes="dng-toolbar-btn" Content="&#x2715;" Foreground="#cc6666"
+                                        Command="{Binding $parent[UserControl].DataContext.RemoveInstancePlacementCommand}"
+                                        CommandParameter="{Binding Index}"
+                                        ToolTip.Tip="Remove" />
+                                <TextBlock FontSize="10" TextTrimming="CharacterEllipsis"
+                                           Text="{Binding DisplayText}"
+                                           Classes.selected="{Binding IsSelected}">
+                                    <TextBlock.Styles>
+                                        <Style Selector="TextBlock">
+                                            <Setter Property="Foreground" Value="#c0b0d8" />
+                                        </Style>
+                                        <Style Selector="TextBlock.selected">
+                                            <Setter Property="Foreground" Value="#f0d080" />
+                                        </Style>
+                                    </TextBlock.Styles>
+                                </TextBlock>
+                            </DockPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            </StackPanel>
+
+            <StackPanel IsVisible="{Binding !HasDungeon}">
+                <TextBlock Text="No dungeon loaded. Open or create a dungeon to add instance placements."
+                           FontSize="11" Foreground="#5a4a6e" TextWrapping="Wrap" />
+            </StackPanel>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

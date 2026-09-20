@@ -1,0 +1,238 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:WorldBuilder.Editors.SpellSet"
+             xmlns:shared="using:WorldBuilder.Views"
+             mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+             x:Class="WorldBuilder.Editors.SpellSet.Views.SpellSetEditorView"
+             x:DataType="vm:SpellSetEditorViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="TextBlock.section-header">
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#d8d0ec" />
+            <Setter Property="Margin" Value="0,10,0,4" />
+        </Style>
+        <Style Selector="Button.toolbar-btn">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Foreground" Value="#a89bbe" />
+        </Style>
+        <Style Selector="Button.toolbar-btn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#33ffffff" />
+            <Setter Property="Foreground" Value="#e0d8ef" />
+        </Style>
+        <Style Selector="Button.small-btn">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="#2a1d42" />
+            <Setter Property="Padding" Value="8,3" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="CornerRadius" Value="3" />
+            <Setter Property="Foreground" Value="#a89bbe" />
+        </Style>
+        <Style Selector="Button.small-btn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#33ffffff" />
+            <Setter Property="Foreground" Value="#e0d8ef" />
+        </Style>
+    </UserControl.Styles>
+
+    <DockPanel>
+        <!-- Toolbar -->
+        <Border DockPanel.Dock="Top"
+                Background="#120c22"
+                BorderBrush="#2a1d42"
+                BorderThickness="0,0,0,1"
+                Padding="4,2">
+            <DockPanel>
+                <StackPanel Orientation="Horizontal" Spacing="4" DockPanel.Dock="Left">
+                    <Button Classes="primary"
+                            Content="Save Spell Set"
+                            Command="{Binding SaveSpellSetCommand}" />
+                    <Button Classes="toolbar-btn"
+                            Content="+ New Set"
+                            Command="{Binding AddSpellSetCommand}" />
+                    <Button Classes="toolbar-btn"
+                            Content="Add Tier"
+                            Command="{Binding AddTierCommand}" />
+                    <Button Classes="toolbar-btn"
+                            Content="Remove Tier"
+                            Command="{Binding RemoveTierCommand}" />
+                    <Border Width="1" Background="#2a1d42" Margin="4,2" />
+                    <TextBlock Text="{Binding StatusText}"
+                               VerticalAlignment="Center"
+                               FontSize="12"
+                               Foreground="#a89bbe" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8" DockPanel.Dock="Right" HorizontalAlignment="Right">
+                    <TextBlock Text="{Binding FilteredSetCount, StringFormat='Showing {0}'}"
+                               VerticalAlignment="Center"
+                               FontSize="12"
+                               Foreground="#8a7a9e" />
+                    <TextBlock Text="{Binding TotalSetCount, StringFormat='of {0} sets'}"
+                               VerticalAlignment="Center"
+                               FontSize="12"
+                               Foreground="#8a7a9e" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <shared:EditorGuideBanner DockPanel.Dock="Top"
+                                  Margin="10,8,10,0"
+                                  Title="Spell sets"
+                                  Body="Equipment sets grant spells as they gain tiers. Pick a set on the left, then add or remove tiers. Save writes the DAT table." />
+
+        <Grid ColumnDefinitions="300,1,*">
+            <!-- Left panel: Equipment set list -->
+            <DockPanel Grid.Column="0" Background="#1a1030">
+                <Border DockPanel.Dock="Top"
+                        Background="#120c22"
+                        Padding="8,6"
+                        BorderBrush="#2a1d42"
+                        BorderThickness="0,0,0,1">
+                    <DockPanel>
+                        <Button DockPanel.Dock="Right"
+                                Classes="toolbar-btn"
+                                Content="Clear"
+                                Command="{Binding ClearFilterCommand}"
+                                Margin="4,0,0,0" />
+                        <TextBox Text="{Binding SearchText}"
+                                 Watermark="Search equipment sets..."
+                                 FontSize="13"
+                                 MinHeight="30"
+                                 Padding="8,4" />
+                    </DockPanel>
+                </Border>
+
+                <ListBox ItemsSource="{Binding SpellSets}"
+                         SelectedItem="{Binding SelectedSpellSet}"
+                         Background="Transparent"
+                         FontSize="12">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SpellSetListItem">
+                            <StackPanel Margin="6,3">
+                                <TextBlock Text="{Binding Name}"
+                                           Foreground="#e0d8ef"
+                                           FontSize="14" />
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <TextBlock Text="{Binding TierCount, StringFormat='{}{0} tiers'}"
+                                               FontSize="11"
+                                               Foreground="#8a7a9e" />
+                                    <TextBlock Text="{Binding TotalSpellCount, StringFormat='{}{0} spells'}"
+                                               FontSize="11"
+                                               Foreground="#8a7a9e" />
+                                </StackPanel>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+
+            <!-- Splitter -->
+            <GridSplitter Grid.Column="1"
+                          Width="1"
+                          Background="#2a1d42"
+                          ResizeDirection="Columns" />
+
+            <!-- Right panel: Spell set detail -->
+            <Border Grid.Column="2" Background="#1a1030">
+                <Panel>
+                    <!-- Empty state -->
+                    <Border Classes="empty-state"
+                               IsVisible="{Binding SelectedDetail, Converter={x:Static ObjectConverters.IsNull}}">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Pick an equipment set"
+                                       FontSize="18"
+                                       FontWeight="SemiBold"
+                                       Foreground="#d8d0ec"
+                                       HorizontalAlignment="Center" />
+                            <TextBlock Classes="hint"
+                                       TextAlignment="Center"
+                                       Text="Each set is a list of spell tiers (for example armor that adds more spells as it levels). Select one to edit its tiers." />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Detail form -->
+                    <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                                  VerticalScrollBarVisibility="Auto"
+                                  IsVisible="{Binding SelectedDetail, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <StackPanel Margin="16,8,16,16" Spacing="4"
+                                    x:CompileBindings="False"
+                                    x:Name="SetDetailPanel"
+                                    DataContext="{Binding SelectedDetail}">
+                            <TextBlock Text="{Binding EquipmentSet, StringFormat='Equipment Set: {0}'}"
+                                       FontSize="16"
+                                       FontWeight="SemiBold"
+                                       Foreground="#c0b0d8"
+                                       Margin="0,0,0,8" />
+
+                            <ItemsControl ItemsSource="{Binding Tiers}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Background="#221840"
+                                                CornerRadius="6"
+                                                Padding="12,8"
+                                                Margin="0,4"
+                                                BorderBrush="#2a1d42"
+                                                BorderThickness="1">
+                                            <StackPanel x:Name="TierPanel" Spacing="6">
+                                                <TextBlock Text="{Binding TierLabel}"
+                                                           Classes="section-header"
+                                                           Margin="0" />
+
+                                                <!-- Spell slots with dropdowns -->
+                                                <ItemsControl ItemsSource="{Binding SpellSlots}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <DockPanel Margin="0,2" MinHeight="30">
+                                                                <Button DockPanel.Dock="Right"
+                                                                        Classes="small-btn"
+                                                                        Content="X"
+                                                                        Foreground="#c45858"
+                                                                        Command="{Binding #TierPanel.DataContext.RemoveSpellSlotCommand}"
+                                                                        CommandParameter="{Binding}"
+                                                                        ToolTip.Tip="Remove this spell"
+                                                                        Margin="4,0,0,0" />
+                                                                <ComboBox ItemsSource="{Binding #TierPanel.DataContext.AllSpells}"
+                                                                          SelectedItem="{Binding SelectedSpell}"
+                                                                          MinWidth="350"
+                                                                          MaxWidth="500"
+                                                                          FontSize="12"
+                                                                          MinHeight="28">
+                                                                    <ComboBox.ItemTemplate>
+                                                                        <DataTemplate>
+                                                                            <TextBlock Text="{Binding DisplayLabel}" FontSize="12" />
+                                                                        </DataTemplate>
+                                                                    </ComboBox.ItemTemplate>
+                                                                </ComboBox>
+                                                            </DockPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+
+                                                <!-- Add spell button -->
+                                                <Button Classes="small-btn"
+                                                        Content="+ Add Spell"
+                                                        Command="{Binding AddSpellSlotCommand}"
+                                                        HorizontalAlignment="Left"
+                                                        Margin="0,2,0,0" />
+                                            </StackPanel>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Panel>
+            </Border>
+        </Grid>
+    </DockPanel>
+</UserControl>

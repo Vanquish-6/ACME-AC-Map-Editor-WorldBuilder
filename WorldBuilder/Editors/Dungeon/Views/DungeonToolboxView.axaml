@@ -1,0 +1,105 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:WorldBuilder.Editors.Dungeon.Tools"
+             xmlns:dungeon="using:WorldBuilder.Editors.Dungeon"
+             xmlns:dviews="using:WorldBuilder.Editors.Dungeon.Views"
+             mc:Ignorable="d" d:DesignWidth="280" d:DesignHeight="500"
+             x:Class="WorldBuilder.Editors.Dungeon.Tools.Views.DungeonToolboxView"
+             x:DataType="vm:DungeonToolboxViewModel">
+    <DockPanel LastChildFill="True">
+        <StackPanel DockPanel.Dock="Top" Spacing="8" Margin="10,10,10,8">
+            <TextBlock Text="{Binding SelectedTool.Name, FallbackValue='No tool selected'}"
+                       FontWeight="SemiBold"
+                       FontSize="13"
+                       Foreground="#d4a843" />
+            <TextBlock Classes="muted" Text="{Binding CurrentToolHint}" />
+        </StackPanel>
+
+        <Border DockPanel.Dock="Bottom"
+                Padding="10,8"
+                BorderBrush="#2a1d42"
+                BorderThickness="0,1,0,0">
+            <StackPanel Spacing="6">
+                <TextBlock Text="Place object by ID"
+                           FontSize="11"
+                           FontWeight="SemiBold"
+                           Foreground="#8a7a9e" />
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBox Grid.Column="0"
+                             Text="{Binding Editor.ObjectIdInput}"
+                             Watermark="Hex ID (e.g. 02000001)"
+                             FontSize="11" />
+                    <Button Grid.Column="1"
+                            Classes="ghost"
+                            Content="Place"
+                            Command="{Binding Editor.StartObjectPlacementCommand}"
+                            FontSize="11"
+                            Margin="6,0,0,0" />
+                </Grid>
+                            </StackPanel>
+        </Border>
+
+        <ScrollViewer>
+            <StackPanel Margin="10,0,10,16" Spacing="10">
+                <ContentControl Content="{Binding Editor}"
+                                IsVisible="{Binding Editor.HasSelectedCell}">
+                    <ContentControl.ContentTemplate>
+                        <DataTemplate x:DataType="dungeon:DungeonEditorViewModel">
+                            <dviews:CellPropertiesView />
+                    </DataTemplate>
+                    </ContentControl.ContentTemplate>
+                </ContentControl>
+
+                <StackPanel Spacing="8" IsVisible="{Binding Editor.HasSelectedObject}">
+                    <DockPanel>
+                        <Border DockPanel.Dock="Left" Width="56" Height="56" CornerRadius="6" ClipToBounds="True"
+                                Background="#1e1435" Margin="0,0,8,0">
+                            <Image Source="{Binding Editor.SelectedItemPreview}" Stretch="Uniform"
+                                   IsVisible="{Binding Editor.SelectedItemPreview, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                        </Border>
+                        <StackPanel Spacing="2">
+                            <TextBlock Text="Object" FontSize="10" Foreground="#8a7a9e" />
+                            <TextBlock Text="{Binding Editor.SelectedItemName}" FontSize="13" FontWeight="SemiBold" Foreground="#e8e0f4" TextWrapping="Wrap" />
+                            <TextBlock Classes="muted" Text="{Binding Editor.SelectedObjectInfo}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </DockPanel>
+                    <TextBlock Text="Position" FontSize="12" FontWeight="SemiBold" Foreground="#d4a843" />
+                    <TextBlock Classes="muted" Text="Drag the colored arrows in the scene, or type values. W = move, E = rotate." />
+                    <Grid ColumnDefinitions="Auto,*,Auto,*,Auto,*">
+                        <TextBlock Grid.Column="0" Text="X" FontSize="10" Foreground="#5a4a6e" VerticalAlignment="Center" Margin="0,0,4,0" />
+                        <TextBox Grid.Column="1" Text="{Binding Editor.ObjPosX}" FontSize="11" />
+                        <TextBlock Grid.Column="2" Text="Y" FontSize="10" Foreground="#5a4a6e" VerticalAlignment="Center" Margin="6,0,4,0" />
+                        <TextBox Grid.Column="3" Text="{Binding Editor.ObjPosY}" FontSize="11" />
+                        <TextBlock Grid.Column="4" Text="Z" FontSize="10" Foreground="#5a4a6e" VerticalAlignment="Center" Margin="6,0,4,0" />
+                        <TextBox Grid.Column="5" Text="{Binding Editor.ObjPosZ}" FontSize="11" />
+                    </Grid>
+                    <Button Classes="ghost"
+                            Content="Apply position"
+                            Command="{Binding Editor.ApplyObjPositionCommand}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center" />
+                    <TextBlock Text="Rotation" FontSize="12" FontWeight="SemiBold" Foreground="#d4a843" />
+                    <Grid ColumnDefinitions="Auto,*">
+                        <TextBlock Text="Yaw" FontSize="10" Foreground="#5a4a6e" VerticalAlignment="Center" Margin="0,0,6,0" />
+                        <TextBox Grid.Column="1" Text="{Binding Editor.ObjRotDegrees}" FontSize="11" />
+                    </Grid>
+                    <Button Classes="ghost"
+                            Content="Apply rotation"
+                            Command="{Binding Editor.ApplyObjRotationCommand}"
+                            HorizontalAlignment="Stretch"
+                            HorizontalContentAlignment="Center" />
+                    <Expander Header="Advanced" Foreground="#8a7a9e" FontSize="11">
+                        <TextBlock Classes="muted" TextWrapping="Wrap" Margin="0,6,0,0"
+                                   Text="DAT setup IDs and stab indices live on the object. Change them only if you know the portal DAT layout." />
+                    </Expander>
+                </StackPanel>
+
+                <TextBlock Classes="muted"
+                           Text="Select a room or object in the viewport to edit it here."
+                           IsVisible="{Binding ShowEmptyHint}" />
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

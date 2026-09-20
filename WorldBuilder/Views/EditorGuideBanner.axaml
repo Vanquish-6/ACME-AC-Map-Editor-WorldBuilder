@@ -1,0 +1,11 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="WorldBuilder.Views.EditorGuideBanner"
+             x:Name="Root">
+    <Border Classes="coach">
+        <StackPanel Spacing="3">
+            <TextBlock Classes="coach-title" Text="{Binding Title, ElementName=Root}" />
+            <TextBlock Classes="hint" Text="{Binding Body, ElementName=Root}" />
+        </StackPanel>
+    </Border>
+</UserControl>

@@ -1,0 +1,390 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:WorldBuilder.Editors.Experience"
+             xmlns:shared="using:WorldBuilder.Views"
+             mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="700"
+             x:Class="WorldBuilder.Editors.Experience.Views.ExperienceEditorView"
+             x:DataType="vm:ExperienceEditorViewModel">
+
+    <UserControl.Styles>
+        <Style Selector="Button.toolbar-btn">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="10,6" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Foreground" Value="#a89bbe" />
+        </Style>
+        <Style Selector="Button.toolbar-btn:pointerover /template/ ContentPresenter">
+            <Setter Property="Background" Value="#33ffffff" />
+            <Setter Property="Foreground" Value="#e0d8ef" />
+        </Style>
+        <Style Selector="TextBlock.section-header">
+            <Setter Property="FontSize" Value="15" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#d8d0ec" />
+            <Setter Property="Margin" Value="0,12,0,6" />
+        </Style>
+        <Style Selector="TextBlock.col-header">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="#b0a0c8" />
+            <Setter Property="Padding" Value="6,4" />
+        </Style>
+        <Style Selector="TextBlock.row-index">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="#8a7a9e" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Padding" Value="6,2" />
+            <Setter Property="Width" Value="60" />
+            <Setter Property="TextAlignment" Value="Right" />
+        </Style>
+        <Style Selector="TextBox.xp-input">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="MinHeight" Value="26" />
+            <Setter Property="Padding" Value="6,3" />
+            <Setter Property="Background" Value="#1e1435" />
+            <Setter Property="Foreground" Value="#e0d8ef" />
+            <Setter Property="BorderBrush" Value="#2a1d42" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="3" />
+        </Style>
+        <Style Selector="TextBox.scale-input">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="MinHeight" Value="26" />
+            <Setter Property="Padding" Value="6,3" />
+            <Setter Property="Background" Value="#1e1435" />
+            <Setter Property="Foreground" Value="#e0d8ef" />
+            <Setter Property="BorderBrush" Value="#2a1d42" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="3" />
+            <Setter Property="Width" Value="80" />
+        </Style>
+        <Style Selector="TextBlock.scale-label">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="#b0a0c8" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TextBlock.help-icon">
+            <Setter Property="Text" Value="?" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Foreground" Value="#5a4a6e" />
+            <Setter Property="Background" Value="#221840" />
+            <Setter Property="Padding" Value="4,1" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Margin" Value="4,0,0,0" />
+        </Style>
+    </UserControl.Styles>
+
+    <DockPanel>
+        <!-- Toolbar -->
+        <Border DockPanel.Dock="Top"
+                Background="#120c22"
+                BorderBrush="#2a1d42"
+                BorderThickness="0,0,0,1"
+                Padding="4,2">
+            <DockPanel>
+                <StackPanel Orientation="Horizontal" Spacing="4" DockPanel.Dock="Left">
+                    <Button Classes="primary"
+                            Content="Save"
+                            Command="{Binding SaveCommand}"
+                            ToolTip.Tip="Save all changes to the experience table DAT" />
+                    <Border Width="1" Background="#2a1d42" Margin="4,2" />
+                    <Button Classes="toolbar-btn"
+                            Content="+ Level"
+                            Command="{Binding AddLevelCommand}"
+                            ToolTip.Tip="Add a new level row at the end" />
+                    <Button Classes="toolbar-btn"
+                            Content="- Level"
+                            Command="{Binding RemoveLevelCommand}"
+                            ToolTip.Tip="Remove the last level row"
+                            Foreground="#c45858" />
+                    <Border Width="1" Background="#2a1d42" Margin="4,2" />
+                    <Button Classes="toolbar-btn"
+                            Content="+ Rank"
+                            Command="{Binding AddRankCommand}"
+                            ToolTip.Tip="Add a new rank to the active tab (Attributes, Vitals, Trained, or Specialized)" />
+                    <Button Classes="toolbar-btn"
+                            Content="- Rank"
+                            Command="{Binding RemoveRankCommand}"
+                            ToolTip.Tip="Remove the last rank from the active tab"
+                            Foreground="#c45858" />
+                    <Border Width="1" Background="#2a1d42" Margin="4,2" />
+                    <Button Classes="toolbar-btn"
+                            Content="Auto-Scale..."
+                            Command="{Binding ToggleAutoScaleCommand}"
+                            ToolTip.Tip="Toggle the auto-scale panel to generate a power-curve XP progression" />
+                    <Border Width="1" Background="#2a1d42" Margin="4,2" />
+                    <TextBlock Text="{Binding StatusText}"
+                               VerticalAlignment="Center"
+                               FontSize="12"
+                               Foreground="#a89bbe" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <shared:EditorGuideBanner DockPanel.Dock="Top"
+                                  Margin="10,8,10,0"
+                                  Title="Experience table"
+                                  Body="This is how much XP each level costs. Edit a number in the grid, or open Auto-Scale to generate a smooth curve, then Save." />
+
+        <!-- Auto-Scale Panel (collapsible) -->
+        <Border DockPanel.Dock="Top"
+                Background="#160e2a"
+                BorderBrush="#2a1d42"
+                BorderThickness="0,0,0,1"
+                Padding="12,8"
+                IsVisible="{Binding IsAutoScaleOpen}">
+            <StackPanel Spacing="8">
+                <TextBlock Text="Auto-Scale All Progression Tables"
+                           FontSize="12" FontWeight="SemiBold" Foreground="#c0b0d8" />
+                <TextBlock Text="Preserves the default 1–275 levels and base rank tables (190 attr / 196 vital / 226 skill) verbatim from the loaded DAT. Only levels and ranks beyond those defaults are generated using the power formula below. Costs are proportional: attributes ~25%, vitals ~20%, trained skills ~33%, specialized ~20% of level XP."
+                           FontSize="10" Foreground="#8a7a9e" TextWrapping="Wrap" MaxWidth="700" />
+                <WrapPanel Orientation="Horizontal">
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4">
+                        <TextBlock Classes="scale-label" Text="Levels" />
+                        <TextBox Classes="scale-input"
+                                 Text="{Binding AutoScaleTotalLevels}"
+                                 ToolTip.Tip="Total character levels to generate" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4">
+                        <TextBlock Classes="scale-label" Text="Base XP" />
+                        <TextBox Classes="scale-input"
+                                 Text="{Binding AutoScaleBaseXp}"
+                                 ToolTip.Tip="XP multiplier. XP[i] = Base × i^Exponent" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4">
+                        <TextBlock Classes="scale-label" Text="Exponent" />
+                        <TextBox Classes="scale-input"
+                                 Text="{Binding AutoScaleGrowthRate}"
+                                 ToolTip.Tip="2.0=quadratic, 2.5=moderate, 3.0=cubic. Higher = steeper late-game" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4">
+                        <TextBlock Classes="scale-label" Text="Credit /N lvl" />
+                        <TextBox Classes="scale-input"
+                                 Text="{Binding AutoScaleCreditsEveryN}"
+                                 ToolTip.Tip="Award 1 skill credit every N levels" />
+                    </StackPanel>
+                </WrapPanel>
+                <WrapPanel Orientation="Horizontal">
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4">
+                        <TextBlock Classes="scale-label" Text="Attr Ranks" />
+                        <TextBox Classes="scale-input"
+                                 Text="{Binding AutoScaleAttributeRanks}"
+                                 ToolTip.Tip="Number of attribute ranks (retail: 190). Max points you can raise an attribute." />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4">
+                        <TextBlock Classes="scale-label" Text="Vital Ranks" />
+                        <TextBox Classes="scale-input"
+                                 Text="{Binding AutoScaleVitalRanks}"
+                                 ToolTip.Tip="Number of vital ranks (retail: 196). Max points for health/stamina/mana." />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4">
+                        <TextBlock Classes="scale-label" Text="Skill Ranks" />
+                        <TextBox Classes="scale-input"
+                                 Text="{Binding AutoScaleSkillRanks}"
+                                 ToolTip.Tip="Number of skill ranks for both trained and specialized (retail: 226)." />
+                    </StackPanel>
+                    <Button Classes="toolbar-btn"
+                            Content="Generate All"
+                            Command="{Binding GenerateAutoScaleCommand}"
+                            ToolTip.Tip="Preserve base 1–275 levels and default ranks; generate extended levels/ranks using the power curve"
+                            Foreground="#6ec07a"
+                            VerticalAlignment="Center" />
+                </WrapPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Main content -->
+        <Border Background="#1a1030">
+            <TabControl SelectedIndex="{Binding SelectedTabIndex}"
+                        FontSize="12"
+                        Padding="0"
+                        Margin="8">
+
+                <!-- Levels Tab -->
+                <TabItem Foreground="#c0b0d8">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Text="Levels" VerticalAlignment="Center" />
+                            <TextBlock Classes="help-icon"
+                                       ToolTip.Tip="XP required to reach each character level, and skill credits awarded at each level." />
+                        </StackPanel>
+                    </TabItem.Header>
+                    <DockPanel Margin="0,8,0,0">
+                        <TextBlock DockPanel.Dock="Top"
+                                   Classes="section-header"
+                                   Text="Character Levels — XP Required &amp; Skill Credits"
+                                   Margin="8,0,0,6" />
+                        <!-- Column headers -->
+                        <Grid DockPanel.Dock="Top" ColumnDefinitions="70,*,*" Margin="8,0,8,0">
+                            <TextBlock Grid.Column="0" Classes="col-header" Text="Level" />
+                            <TextBlock Grid.Column="1" Classes="col-header" Text="XP Required" />
+                            <TextBlock Grid.Column="2" Classes="col-header" Text="Skill Credits" />
+                        </Grid>
+                        <Border BorderBrush="#2a1d42" BorderThickness="0,1,0,0" Margin="8,2,8,0">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding Levels}" x:CompileBindings="False">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="70,*,*" Margin="0,1">
+                                                <TextBlock Grid.Column="0" Classes="row-index" Text="{Binding Level}" />
+                                                <TextBox Grid.Column="1" Classes="xp-input" Text="{Binding XpRequired, Mode=TwoWay}" Margin="4,1" />
+                                                <TextBox Grid.Column="2" Classes="xp-input" Text="{Binding SkillCredits, Mode=TwoWay}" Margin="4,1" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Border>
+                    </DockPanel>
+                </TabItem>
+
+                <!-- Attributes Tab -->
+                <TabItem Foreground="#c0b0d8">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Text="Attributes" VerticalAlignment="Center" />
+                            <TextBlock Classes="help-icon"
+                                       ToolTip.Tip="XP cost to raise attributes (Strength, Endurance, etc.) per rank." />
+                        </StackPanel>
+                    </TabItem.Header>
+                    <DockPanel Margin="0,8,0,0">
+                        <TextBlock DockPanel.Dock="Top"
+                                   Classes="section-header"
+                                   Text="Attribute XP — Cost per Rank"
+                                   Margin="8,0,0,6" />
+                        <Grid DockPanel.Dock="Top" ColumnDefinitions="70,*" Margin="8,0,8,0">
+                            <TextBlock Grid.Column="0" Classes="col-header" Text="Rank" />
+                            <TextBlock Grid.Column="1" Classes="col-header" Text="XP Required" />
+                        </Grid>
+                        <Border BorderBrush="#2a1d42" BorderThickness="0,1,0,0" Margin="8,2,8,0">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding Attributes}" x:CompileBindings="False">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="70,*" Margin="0,1">
+                                                <TextBlock Grid.Column="0" Classes="row-index" Text="{Binding Index}" />
+                                                <TextBox Grid.Column="1" Classes="xp-input" Text="{Binding Value, Mode=TwoWay}" Margin="4,1" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Border>
+                    </DockPanel>
+                </TabItem>
+
+                <!-- Vitals Tab -->
+                <TabItem Foreground="#c0b0d8">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Text="Vitals" VerticalAlignment="Center" />
+                            <TextBlock Classes="help-icon"
+                                       ToolTip.Tip="XP cost to raise vitals (Health, Stamina, Mana) per rank." />
+                        </StackPanel>
+                    </TabItem.Header>
+                    <DockPanel Margin="0,8,0,0">
+                        <TextBlock DockPanel.Dock="Top"
+                                   Classes="section-header"
+                                   Text="Vital XP — Cost per Rank"
+                                   Margin="8,0,0,6" />
+                        <Grid DockPanel.Dock="Top" ColumnDefinitions="70,*" Margin="8,0,8,0">
+                            <TextBlock Grid.Column="0" Classes="col-header" Text="Rank" />
+                            <TextBlock Grid.Column="1" Classes="col-header" Text="XP Required" />
+                        </Grid>
+                        <Border BorderBrush="#2a1d42" BorderThickness="0,1,0,0" Margin="8,2,8,0">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding Vitals}" x:CompileBindings="False">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="70,*" Margin="0,1">
+                                                <TextBlock Grid.Column="0" Classes="row-index" Text="{Binding Index}" />
+                                                <TextBox Grid.Column="1" Classes="xp-input" Text="{Binding Value, Mode=TwoWay}" Margin="4,1" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Border>
+                    </DockPanel>
+                </TabItem>
+
+                <!-- Trained Skills Tab -->
+                <TabItem Foreground="#c0b0d8">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Text="Trained Skills" VerticalAlignment="Center" />
+                            <TextBlock Classes="help-icon"
+                                       ToolTip.Tip="XP cost per rank for skills that are trained (not specialized)." />
+                        </StackPanel>
+                    </TabItem.Header>
+                    <DockPanel Margin="0,8,0,0">
+                        <TextBlock DockPanel.Dock="Top"
+                                   Classes="section-header"
+                                   Text="Trained Skill XP — Cost per Rank"
+                                   Margin="8,0,0,6" />
+                        <Grid DockPanel.Dock="Top" ColumnDefinitions="70,*" Margin="8,0,8,0">
+                            <TextBlock Grid.Column="0" Classes="col-header" Text="Rank" />
+                            <TextBlock Grid.Column="1" Classes="col-header" Text="XP Required" />
+                        </Grid>
+                        <Border BorderBrush="#2a1d42" BorderThickness="0,1,0,0" Margin="8,2,8,0">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding TrainedSkills}" x:CompileBindings="False">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="70,*" Margin="0,1">
+                                                <TextBlock Grid.Column="0" Classes="row-index" Text="{Binding Index}" />
+                                                <TextBox Grid.Column="1" Classes="xp-input" Text="{Binding Value, Mode=TwoWay}" Margin="4,1" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Border>
+                    </DockPanel>
+                </TabItem>
+
+                <!-- Specialized Skills Tab -->
+                <TabItem Foreground="#c0b0d8">
+                    <TabItem.Header>
+                        <StackPanel Orientation="Horizontal" Spacing="4">
+                            <TextBlock Text="Specialized Skills" VerticalAlignment="Center" />
+                            <TextBlock Classes="help-icon"
+                                       ToolTip.Tip="XP cost per rank for skills that are specialized (higher investment, faster gains)." />
+                        </StackPanel>
+                    </TabItem.Header>
+                    <DockPanel Margin="0,8,0,0">
+                        <TextBlock DockPanel.Dock="Top"
+                                   Classes="section-header"
+                                   Text="Specialized Skill XP — Cost per Rank"
+                                   Margin="8,0,0,6" />
+                        <Grid DockPanel.Dock="Top" ColumnDefinitions="70,*" Margin="8,0,8,0">
+                            <TextBlock Grid.Column="0" Classes="col-header" Text="Rank" />
+                            <TextBlock Grid.Column="1" Classes="col-header" Text="XP Required" />
+                        </Grid>
+                        <Border BorderBrush="#2a1d42" BorderThickness="0,1,0,0" Margin="8,2,8,0">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                <ItemsControl ItemsSource="{Binding SpecializedSkills}" x:CompileBindings="False">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid ColumnDefinitions="70,*" Margin="0,1">
+                                                <TextBlock Grid.Column="0" Classes="row-index" Text="{Binding Index}" />
+                                                <TextBox Grid.Column="1" Classes="xp-input" Text="{Binding Value, Mode=TwoWay}" Margin="4,1" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                        </Border>
+                    </DockPanel>
+                </TabItem>
+
+            </TabControl>
+        </Border>
+    </DockPanel>
+</UserControl>

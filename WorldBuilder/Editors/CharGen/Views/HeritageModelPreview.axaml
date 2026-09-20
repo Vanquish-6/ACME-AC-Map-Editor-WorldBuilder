@@ -1,0 +1,38 @@
+<views:Base3DView
+    x:Class="WorldBuilder.Editors.CharGen.Views.HeritageModelPreview"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:views="using:WorldBuilder.Views"
+    xmlns:vm="using:WorldBuilder.Editors.CharGen"
+    x:DataType="vm:HeritageModelPreviewViewModel">
+
+    <DockPanel>
+        <!-- Status bar + Apply buttons -->
+        <Border DockPanel.Dock="Top" Background="#120c22" Padding="6,4"
+                BorderBrush="#2a1d42" BorderThickness="0,0,0,1">
+            <DockPanel>
+                <StackPanel Orientation="Horizontal" Spacing="4" DockPanel.Dock="Right">
+                    <Button Content="Use as Setup ID" Command="{Binding ApplyToSetupCommand}"
+                            FontSize="10" Padding="8,3" MinHeight="0" MinWidth="0"
+                            Background="#1a3a1a" Foreground="#6ec07a"
+                            BorderThickness="1" BorderBrush="#2a5a2a" CornerRadius="3" />
+                    <Button Content="Use as Env Setup" Command="{Binding ApplyToEnvSetupCommand}"
+                            FontSize="10" Padding="8,3" MinHeight="0" MinWidth="0"
+                            Background="#1a2a3a" Foreground="#6ab0e0"
+                            BorderThickness="1" BorderBrush="#2a4a6a" CornerRadius="3" />
+                </StackPanel>
+                <TextBlock Text="{Binding Status}" FontSize="11" Foreground="#c0b0d8"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            </DockPanel>
+        </Border>
+
+        <Border DockPanel.Dock="Bottom" Background="#120c22" Padding="6,2"
+                BorderBrush="#2a1d42" BorderThickness="0,1,0,0">
+            <TextBlock Text="Drag to rotate, scroll to zoom. Click an object in the browser to preview it here."
+                       FontSize="9" Foreground="#3a2d52" />
+        </Border>
+
+        <!-- GL Viewport -->
+        <Panel x:Name="Viewport" Background="#120c22" />
+    </DockPanel>
+</views:Base3DView>

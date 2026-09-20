@@ -1,0 +1,113 @@
+<UserControl
+    x:Class="WorldBuilder.Editors.Dungeon.Views.SurfaceBrowserView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:WorldBuilder.Editors.Dungeon"
+    d:DesignHeight="500"
+    d:DesignWidth="280"
+    x:CompileBindings="True"
+    x:DataType="vm:SurfaceBrowserViewModel"
+    mc:Ignorable="d">
+    <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="4,2">
+            <TextBox
+                Watermark="Search by hex ID (e.g. 0800)"
+                Text="{Binding SearchText}"
+                FontSize="11"
+                Padding="4,3" />
+
+            <StackPanel Orientation="Horizontal" Spacing="8">
+                <CheckBox Content="Dungeon" IsChecked="{Binding ShowDungeonOnly}" FontSize="11" Padding="2,0"
+                          ToolTip.Tip="Show only surfaces used in existing dungeon cells" />
+                <CheckBox Content="This Cell" IsChecked="{Binding ShowCurrentCellOnly}" FontSize="11" Padding="2,0"
+                          ToolTip.Tip="Show only surfaces on the currently selected cell" />
+                <CheckBox Content="Custom" IsChecked="{Binding ShowCustomOnly}" FontSize="11" Padding="2,0"
+                          ToolTip.Tip="Show only imported custom surfaces" />
+                <ToggleButton IsChecked="{Binding ShowFavoritesOnly}" Padding="4,2" FontSize="11"
+                              Background="Transparent" BorderThickness="0" ToolTip.Tip="Show favorites only">
+                    <Panel>
+                        <TextBlock Text="&#x2605;" FontSize="14" Foreground="#c8a832"
+                                   IsVisible="{Binding ShowFavoritesOnly}" />
+                        <TextBlock Text="&#x2606;" FontSize="14" Foreground="#5a4a6e"
+                                   IsVisible="{Binding !ShowFavoritesOnly}" />
+                    </Panel>
+                </ToggleButton>
+            </StackPanel>
+            <Button Content="Import Surface..." Command="{Binding ImportSurfaceCommand}"
+                    FontSize="11" Padding="6,3" HorizontalAlignment="Left"
+                    ToolTip.Tip="Import an image file as a new dungeon surface texture" />
+
+            <TextBlock
+                FontSize="10"
+                Foreground="{DynamicResource SystemBaseMediumColor}"
+                Opacity="0.7"
+                Text="{Binding Status}"
+                TextWrapping="Wrap" />
+        </StackPanel>
+
+        <ScrollViewer>
+            <StackPanel>
+                <ItemsControl ItemsSource="{Binding FilteredItems}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SurfaceBrowserItem">
+                            <Button
+                                Margin="2"
+                                Padding="2"
+                                Command="{Binding $parent[UserControl].((vm:SurfaceBrowserViewModel)DataContext).SelectSurfaceCommand}"
+                                CommandParameter="{Binding}"
+                                ToolTip.Tip="{Binding DisplayId}"
+                                Focusable="False"
+                                HorizontalContentAlignment="Center">
+                                <StackPanel Spacing="2" HorizontalAlignment="Center">
+                                    <Panel Width="64" Height="64">
+                                        <Border
+                                            Background="#FF2A2A2A"
+                                            CornerRadius="2"
+                                            IsVisible="{Binding Thumbnail, Converter={x:Static ObjectConverters.IsNull}}" />
+                                        <Image
+                                            Width="64"
+                                            Height="64"
+                                            Source="{Binding Thumbnail}"
+                                            Stretch="Uniform"
+                                            IsVisible="{Binding Thumbnail, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                                        <Button CornerRadius="0,4,0,0" Padding="1,0"
+                                                Background="#CC1a0e30" BorderThickness="0"
+                                                HorizontalAlignment="Left" VerticalAlignment="Bottom"
+                                                Command="{Binding $parent[UserControl].((vm:SurfaceBrowserViewModel)DataContext).ToggleFavoriteCommand}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip.Tip="Toggle favorite" Cursor="Hand" Focusable="False">
+                                            <Panel>
+                                                <TextBlock Text="&#x2605;" FontSize="10" Foreground="#c8a832"
+                                                           IsVisible="{Binding IsFavorite}" />
+                                                <TextBlock Text="&#x2606;" FontSize="10" Foreground="#5a4a6e"
+                                                           IsVisible="{Binding !IsFavorite}" />
+                                            </Panel>
+                                        </Button>
+                                    </Panel>
+                                    <TextBlock
+                                        Text="{Binding DisplayId}"
+                                        FontSize="8"
+                                        FontFamily="Consolas"
+                                        HorizontalAlignment="Center"
+                                        TextTrimming="CharacterEllipsis"
+                                        MaxWidth="68" />
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Content="Load More..." Command="{Binding LoadMoreCommand}"
+                        IsVisible="{Binding CanLoadMore}"
+                        HorizontalAlignment="Center" Margin="4,6"
+                        FontSize="11" Padding="16,5" />
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>

@@ -1,0 +1,69 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:WorldBuilder.Editors.Landscape.ViewModels"
+             mc:Ignorable="d"
+             x:Class="WorldBuilder.Editors.Landscape.Views.WorldMapPanelView"
+             x:DataType="vm:WorldMapPanelViewModel">
+
+    <Grid RowDefinitions="Auto,*,Auto">
+        <!-- Toolbar -->
+        <Border Grid.Row="0"
+                Padding="10,8"
+                Background="#140a20"
+                BorderBrush="#2a1d42"
+                BorderThickness="0,0,0,1">
+            <DockPanel>
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Spacing="2">
+                    <Button x:Name="CenterBtn"
+                            Padding="6,2"
+                            FontSize="11"
+                            ToolTip.Tip="Center on Camera"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Foreground="#8a7a9e"
+                            Cursor="Hand">
+                        <TextBlock Text="&#x25CE;" />
+                    </Button>
+                    <Button x:Name="RebuildBtn"
+                            Padding="6,2"
+                            FontSize="11"
+                            ToolTip.Tip="Rebuild Map"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Foreground="#8a7a9e"
+                            Cursor="Hand"
+                            IsEnabled="{Binding !IsBuilding}">
+                        <TextBlock Text="&#x21BA;" />
+                    </Button>
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                    <TextBlock VerticalAlignment="Center"
+                               FontSize="11"
+                               Foreground="#6a5a7e"
+                               Text="Building map..."
+                               IsVisible="{Binding IsBuilding}" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Map area -->
+        <Border Grid.Row="1"
+                Background="#0a0818"
+                ClipToBounds="True"
+                x:Name="MapBorder" />
+
+        <!-- Status Bar -->
+        <Border Grid.Row="2"
+                Padding="10,6"
+                Background="#140a20"
+                BorderBrush="#2a1d42"
+                BorderThickness="0,1,0,0">
+            <TextBlock x:Name="StatusText"
+                       FontFamily="Consolas, Courier New"
+                       FontSize="10"
+                       Foreground="#6a5a7e" />
+        </Border>
+    </Grid>
+</UserControl>

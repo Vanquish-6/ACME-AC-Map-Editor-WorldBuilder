@@ -1,0 +1,24 @@
+<Window
+    x:Class="WorldBuilder.Views.MainWindow"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:dialog="clr-namespace:DialogHostAvalonia;assembly=DialogHost.Avalonia"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:views="clr-namespace:WorldBuilder.Views"
+    xmlns:vm="using:WorldBuilder.ViewModels"
+    Title="ACME WorldBuilder"
+    WindowState="Maximized"
+    d:DesignHeight="450"
+    d:DesignWidth="800"
+    x:CompileBindings="True"
+    Background="#0d0016"
+    Icon="/Assets/acme-wblogo.ico"
+    RequestedThemeVariant="Dark"
+    WindowStartupLocation="CenterScreen"
+    mc:Ignorable="d">
+
+    <dialog:DialogHost Identifier="MainDialogHost">
+        <views:MainView />
+    </dialog:DialogHost>
+</Window>

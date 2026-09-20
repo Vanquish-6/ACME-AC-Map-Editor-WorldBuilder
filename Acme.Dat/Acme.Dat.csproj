@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <NativeDatLibraryPath Condition="'$(NativeDatLibraryPath)' == '' AND Exists('$(MSBuildThisFileDirectory)..\native\acme_dat.dll')">$(MSBuildThisFileDirectory)..\native\acme_dat.dll</NativeDatLibraryPath>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(NativeDatLibraryPath)' != ''">
+    <None Include="$(NativeDatLibraryPath)" Link="acme_dat.dll" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="MessagePack" Version="3.1.8" />
+  </ItemGroup>
+</Project>

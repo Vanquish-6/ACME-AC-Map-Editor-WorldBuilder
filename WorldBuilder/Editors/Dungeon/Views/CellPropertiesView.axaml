@@ -1,0 +1,129 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WorldBuilder.Editors.Dungeon"
+             x:Class="WorldBuilder.Editors.Dungeon.Views.CellPropertiesView"
+             x:DataType="vm:DungeonEditorViewModel">
+    <StackPanel Spacing="8" IsVisible="{Binding HasSelectedCell}">
+        <DockPanel>
+            <Border DockPanel.Dock="Left" Width="64" Height="64" CornerRadius="6" ClipToBounds="True"
+                    Background="#1e1435" Margin="0,0,10,0">
+                <Image Source="{Binding SelectedItemPreview}" Stretch="Uniform"
+                       IsVisible="{Binding SelectedItemPreview, Converter={x:Static ObjectConverters.IsNotNull}}" />
+            </Border>
+            <StackPanel Spacing="2">
+                <TextBlock Text="{Binding SelectedItemKind}" FontSize="10" Foreground="#8a7a9e" />
+                <TextBlock Text="{Binding SelectedItemName}" FontSize="14" FontWeight="SemiBold"
+                           Foreground="#e8e0f4" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding SelectedCellInfo}" FontSize="11" Foreground="#8a7a9e" TextWrapping="Wrap" />
+            </StackPanel>
+        </DockPanel>
+
+        <Button Classes="ghost" Content="Favorite this room type" Command="{Binding FavoriteSelectedRoomCommand}"
+                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                ToolTip.Tip="Add this room type to your favorites list" />
+        <Button Classes="ghost" Content="Save selection as piece" Command="{Binding SaveSelectionAsPrefabCommand}"
+                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                ToolTip.Tip="Save the selected room(s) as a reusable favorite piece" />
+
+        <TextBlock Text="Position" FontSize="12" FontWeight="SemiBold" Foreground="#d4a843" Margin="0,4,0,2" />
+        <TextBlock Classes="muted" Text="World location of this room. Drag the move arrows in the scene, or type values here." />
+        <Grid ColumnDefinitions="Auto,*,Auto,*,Auto,*" Margin="0,2">
+            <TextBlock Grid.Column="0" Text="X" FontSize="10" Foreground="#5a4a6e" VerticalAlignment="Center" Margin="0,0,4,0" />
+            <TextBox Grid.Column="1" Text="{Binding CellPosX}" FontSize="11" />
+            <TextBlock Grid.Column="2" Text="Y" FontSize="10" Foreground="#5a4a6e" VerticalAlignment="Center" Margin="6,0,4,0" />
+            <TextBox Grid.Column="3" Text="{Binding CellPosY}" FontSize="11" />
+            <TextBlock Grid.Column="4" Text="Z" FontSize="10" Foreground="#5a4a6e" VerticalAlignment="Center" Margin="6,0,4,0" />
+            <TextBox Grid.Column="5" Text="{Binding CellPosZ}" FontSize="11" />
+        </Grid>
+        <Button Classes="ghost" Content="Apply position" Command="{Binding ApplyPositionCommand}"
+                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+
+        <StackPanel Orientation="Horizontal" Spacing="8">
+            <CheckBox IsChecked="{Binding GridSnapEnabled}" Content="Snap" FontSize="11" Foreground="#8a7a9e" VerticalAlignment="Center"
+                      ToolTip.Tip="Snap moves and duplicates to the grid" />
+            <NumericUpDown Value="{Binding GridSnapSize}" Minimum="0.5" Maximum="50" Increment="0.5" Width="72" FontSize="11" FormatString="0.0"
+                           IsVisible="{Binding GridSnapEnabled}" />
+        </StackPanel>
+
+        <TextBlock Text="Rotation" FontSize="12" FontWeight="SemiBold" Foreground="#d4a843" Margin="0,4,0,2" />
+        <TextBlock Classes="muted" Text="Turn the room in 90° steps. Use the rotation rings in the scene for free rotation (E)." />
+        <Grid ColumnDefinitions="Auto,*,*" RowDefinitions="Auto,Auto,Auto">
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="X" FontSize="10" Foreground="#5a4a6e" VerticalAlignment="Center" Margin="0,0,6,0" />
+            <Button Grid.Row="0" Grid.Column="1" Classes="ghost" Content="-90" Command="{Binding RotateCellXNegCommand}" FontSize="11" Padding="4,2" />
+            <Button Grid.Row="0" Grid.Column="2" Classes="ghost" Content="+90" Command="{Binding RotateCellXPosCommand}" FontSize="11" Padding="4,2" />
+            <TextBlock Grid.Row="1" Grid.Column="0" Text="Y" FontSize="10" Foreground="#5a4a6e" VerticalAlignment="Center" Margin="0,0,6,0" />
+            <Button Grid.Row="1" Grid.Column="1" Classes="ghost" Content="-90" Command="{Binding RotateCellYNegCommand}" FontSize="11" Padding="4,2" />
+            <Button Grid.Row="1" Grid.Column="2" Classes="ghost" Content="+90" Command="{Binding RotateCellYPosCommand}" FontSize="11" Padding="4,2" />
+            <TextBlock Grid.Row="2" Grid.Column="0" Text="Z" FontSize="10" Foreground="#5a4a6e" VerticalAlignment="Center" Margin="0,0,6,0" />
+            <Button Grid.Row="2" Grid.Column="1" Classes="ghost" Content="-90" Command="{Binding RotateCellZNegCommand}" FontSize="11" Padding="4,2" />
+            <Button Grid.Row="2" Grid.Column="2" Classes="ghost" Content="+90" Command="{Binding RotateCellZPosCommand}" FontSize="11" Padding="4,2" />
+        </Grid>
+
+        <TextBlock Text="Doorways" FontSize="12" FontWeight="SemiBold" Foreground="#d4a843" Margin="0,4,0,2" />
+        <TextBlock Classes="muted" Text="Green is open. Blue is connected. Show Fits filters the catalog to pieces that plug into this opening." />
+        <ItemsControl ItemsSource="{Binding PortalList}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:PortalListEntry">
+                    <Border Margin="0,1" Padding="6,4" CornerRadius="4" Background="#16102a">
+                        <StackPanel Spacing="4">
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0" Text="{Binding DisplayText}" FontSize="10" FontFamily="Consolas" Foreground="#c0b0d8" VerticalAlignment="Center" />
+                                <Button Grid.Column="1" Classes="danger" Content="Disconnect"
+                                        Command="{Binding $parent[UserControl].((vm:DungeonEditorViewModel)DataContext).DisconnectPortalAtCommand}"
+                                        CommandParameter="{Binding Index}" FontSize="10" Padding="8,2" IsVisible="{Binding IsConnected}" />
+                            </Grid>
+                            <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding IsOpen}">
+                                <Button Classes="ghost" Content="Cap"
+                                        Command="{Binding $parent[UserControl].((vm:DungeonEditorViewModel)DataContext).CapPortalCommand}"
+                                        CommandParameter="{Binding}" FontSize="10" Padding="8,2"
+                                        ToolTip.Tip="Auto-seal this doorway with a dead-end room" />
+                                <Button Classes="ghost" Content="Show fits"
+                                        Command="{Binding $parent[UserControl].((vm:DungeonEditorViewModel)DataContext).FilterPaletteForPortalCommand}"
+                                        CommandParameter="{Binding}" FontSize="10" Padding="8,2"
+                                        ToolTip.Tip="Switch to Rooms and show only pieces that connect here" />
+                                <TextBlock Text="{Binding CompatibleHint}" FontSize="10" Foreground="#5a6a6a" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+
+        <TextBlock Text="Textures" FontSize="12" FontWeight="SemiBold" Foreground="#d4a843" Margin="0,4,0,2" />
+        <TextBlock Classes="muted" Text="Each slot is a surface painted on this room. Click a slot, then pick a texture in Surfaces." />
+        <ListBox ItemsSource="{Binding SurfaceSlots}" SelectedIndex="{Binding SelectedSurfaceSlot}" FontSize="11" MaxHeight="140" Background="Transparent">
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:CellSurfaceSlot">
+                    <StackPanel Orientation="Horizontal" Spacing="6" Margin="2">
+                        <Panel Width="24" Height="24">
+                            <Border Background="#FF2A2A2A" CornerRadius="2" IsVisible="{Binding Thumbnail, Converter={x:Static ObjectConverters.IsNull}}" />
+                            <Image Width="24" Height="24" Source="{Binding Thumbnail}" Stretch="Uniform" IsVisible="{Binding Thumbnail, Converter={x:Static ObjectConverters.IsNotNull}}" />
+                        </Panel>
+                        <TextBlock Text="{Binding DisplayText}" VerticalAlignment="Center" Foreground="#c0b0d8" FontFamily="Consolas" />
+                    </StackPanel>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+        <Button Classes="ghost" Content="Match to style" Command="{Binding MatchToStyleCommand}"
+                HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                ToolTip.Tip="Retexture selected rooms to match the dominant style for their room type" />
+
+        <Expander Header="Advanced" Foreground="#8a7a9e" FontSize="11" Margin="0,8,0,0">
+            <StackPanel Spacing="6" Margin="0,8,0,0">
+                <TextBlock Classes="muted" Text="Raw DAT identifiers and in-game teleport. You usually do not need these." />
+                <TextBlock Text="Teleport" FontSize="11" FontWeight="SemiBold" Foreground="#d4a843" />
+                <TextBox Text="{Binding SelectedCellTeleportCommand}" FontSize="10" FontFamily="Consolas" IsReadOnly="True" TextWrapping="Wrap" />
+                <TextBlock Text="Surfaces (hex, comma-separated)" FontSize="11" Foreground="#8a7a9e" />
+                <TextBox Text="{Binding SelectedCellSurfaces}" FontSize="11" TextWrapping="Wrap" AcceptsReturn="False" />
+                <Button Classes="ghost" Content="Apply surfaces" Command="{Binding ApplySurfacesCommand}"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Text="Nudge step" FontSize="11" Foreground="#5a4a6e" VerticalAlignment="Center" />
+                    <NumericUpDown Value="{Binding NudgeStep}" Minimum="0.1" Maximum="100" Increment="0.5" Width="72" FontSize="11" FormatString="0.0" />
+                </StackPanel>
+                <Button Classes="danger" Content="Delete room" Command="{Binding DeleteSelectedCellCommand}"
+                        HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" />
+            </StackPanel>
+        </Expander>
+    </StackPanel>
+</UserControl>

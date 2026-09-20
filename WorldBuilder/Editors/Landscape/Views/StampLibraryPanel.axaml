@@ -1,0 +1,59 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:vm="using:WorldBuilder.Editors.Landscape.ViewModels"
+             mc:Ignorable="d" d:DesignWidth="300" d:DesignHeight="400"
+             x:Class="WorldBuilder.Editors.Landscape.Views.StampLibraryPanel"
+             x:DataType="vm:PasteSubToolViewModel">
+    <DockPanel>
+        <TextBlock DockPanel.Dock="Top" Text="Stamp Library" FontWeight="Bold" Margin="0,0,0,8"/>
+
+        <StackPanel DockPanel.Dock="Top" Spacing="4" Margin="0,0,0,8">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+                <Button Content="Rotate ↻" Command="{Binding RotateClockwiseCommand}" />
+                <Button Content="Rotate ↺" Command="{Binding RotateCounterClockwiseCommand}" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="4">
+                <CheckBox Content="Include Objects" IsChecked="{Binding IncludeObjects}" />
+                <CheckBox Content="Blend Edges" IsChecked="{Binding BlendEdges}" />
+            </StackPanel>
+        </StackPanel>
+
+        <ListBox ItemsSource="{Binding AvailableStamps}"
+                 SelectedItem="{Binding SelectedStamp}">
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Grid ColumnDefinitions="Auto, *, Auto">
+                        <!-- Thumbnail -->
+                        <Border Grid.Column="0" Width="48" Height="48" Margin="0,0,8,0"
+                                BorderBrush="Gray" BorderThickness="1" Background="Black">
+                            <Image Source="{Binding Thumbnail}" Stretch="Uniform" />
+                        </Border>
+
+                        <!-- Metadata -->
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding Name}" FontWeight="Bold" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Text="{Binding Description}" FontSize="10" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock FontSize="10">
+                                <Run Text="{Binding WidthInVertices}"/>
+                                <Run Text="x"/>
+                                <Run Text="{Binding HeightInVertices}"/>
+                                <Run Text=" vertices"/>
+                            </TextBlock>
+                            <TextBlock Text="{Binding Created, StringFormat='{}{0:g}'}"
+                                       FontSize="10" Foreground="Gray"/>
+                        </StackPanel>
+
+                        <!-- Delete Button -->
+                        <Button Grid.Column="2" Content="❌"
+                                Margin="4,0,0,0" VerticalAlignment="Center"
+                                Command="{Binding $parent[UserControl].((vm:PasteSubToolViewModel)DataContext).DeleteStampCommand}"
+                                CommandParameter="{Binding}"
+                                ToolTip.Tip="Delete Stamp"/>
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+    </DockPanel>
+</UserControl>

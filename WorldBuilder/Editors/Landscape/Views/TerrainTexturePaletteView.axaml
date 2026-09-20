@@ -1,0 +1,80 @@
+<UserControl
+    x:Class="WorldBuilder.Editors.Landscape.Views.TerrainTexturePaletteView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="using:WorldBuilder.Editors.Landscape.ViewModels"
+    d:DesignHeight="600"
+    d:DesignWidth="280"
+    x:CompileBindings="True"
+    x:DataType="vm:TerrainTexturePaletteViewModel"
+    mc:Ignorable="d">
+    <DockPanel LastChildFill="True">
+        <TextBlock
+            DockPanel.Dock="Top"
+            Margin="10,10,10,4"
+            Classes="muted"
+            Text="Click a texture, then paint with the Terrain brush." />
+
+        <ScrollViewer>
+            <ItemsControl ItemsSource="{Binding Textures}" Margin="6,4,6,16">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel Orientation="Horizontal" />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:TerrainTextureItem">
+                        <Button
+                            Classes="palette-card"
+                            Classes.selected="{Binding IsSelected}"
+                            Margin="4"
+                            Width="96"
+                            Command="{Binding Owner.SelectTextureCommand}"
+                            CommandParameter="{Binding}"
+                            ToolTip.Tip="{Binding DisplayName}">
+                            <Button.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Replace Texture..."
+                                              Command="{Binding Owner.ReplaceTextureCommand}"
+                                              CommandParameter="{Binding}" />
+                                    <MenuItem Header="Revert to Original"
+                                              Command="{Binding Owner.RevertTextureCommand}"
+                                              CommandParameter="{Binding}"
+                                              IsEnabled="{Binding IsCustom}" />
+                                </ContextMenu>
+                            </Button.ContextMenu>
+                            <StackPanel Spacing="6" HorizontalAlignment="Center">
+                                <Panel Width="80" Height="80">
+                                    <Border
+                                        CornerRadius="6"
+                                        ClipToBounds="True"
+                                        Background="#1e1435"
+                                        BorderBrush="#2a1d42"
+                                        BorderThickness="1">
+                                        <Image
+                                            Source="{Binding Thumbnail}"
+                                            Stretch="UniformToFill" />
+                                    </Border>
+                                    <Border
+                                        CornerRadius="6"
+                                        BorderBrush="#4CAF50"
+                                        BorderThickness="2"
+                                        IsVisible="{Binding IsCustom}" />
+                                </Panel>
+                                <TextBlock
+                                    Text="{Binding DisplayName}"
+                                    FontSize="11"
+                                    Foreground="#c0b0d8"
+                                    TextTrimming="CharacterEllipsis"
+                                    HorizontalAlignment="Center"
+                                    MaxWidth="88" />
+                            </StackPanel>
+                        </Button>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </DockPanel>
+</UserControl>
