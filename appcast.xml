@@ -5,16 +5,17 @@
     <description>Most recent changes with links to updates</description>
     <language>en</language>
     <item>
-      <title>ACME WorldBuilder 0.1.0+2</title>
+      <title>ACME WorldBuilder 0.1.0+3</title>
       <description>## Changes
 
+- Update export-public-repo.ps1 with GitHub instructions ([a581a5a](https://github.com/Vanquish-6/ACME-AC-Map-Editor-WorldBuilder/commit/a581a5a1c77a9b12ecabe03e67084c5fc7bbdc03))
 - Ignore leftover extract folders in the public tree. ([dc76cb9](https://github.com/Vanquish-6/ACME-AC-Map-Editor-WorldBuilder/commit/dc76cb9e5afb10274a9ad1a6e2e74e4bc8c5f298))
 - Initial public ACME WorldBuilder. ([01ebc1f](https://github.com/Vanquish-6/ACME-AC-Map-Editor-WorldBuilder/commit/01ebc1f2f80081d090016fa9dd94f68cc620ee31))</description>
-      <pubDate>Sun, 20 Sep 2026 07:30:22 +00:00</pubDate>
-      <sparkle:version>0.1.0+2</sparkle:version>
+      <pubDate>Sun, 20 Sep 2026 08:10:59 +00:00</pubDate>
+      <sparkle:version>0.1.0+3</sparkle:version>
       <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
       <sparkle:channel>edge</sparkle:channel>
-      <enclosure url="https://github.com/Vanquish-6/ACME-AC-Map-Editor-WorldBuilder/releases/download/latest/ACME-WorldBuilderInstall-0.1.0%2B2.exe" sparkle:version="0.1.0+2" sparkle:shortVersionString="0.1.0" length="23879042" sparkle:os="windows-x64" type="application/x-msdos-program" sparkle:criticalUpdate="false" sparkle:signature="9nq1DEjU36XabJ+olRbljmC3CI3NYECv0/zeBGv37Bthw7FrhDNsPixOTa8EGIqqBucbiUoxqwK5VzfFsQNvDA==" />
+      <enclosure url="https://github.com/Vanquish-6/ACME-AC-Map-Editor-WorldBuilder/releases/download/latest/ACME-WorldBuilderInstall-0.1.0%2B3.exe" sparkle:version="0.1.0+3" sparkle:shortVersionString="0.1.0" length="23879032" sparkle:os="windows-x64" type="application/x-msdos-program" sparkle:criticalUpdate="false" sparkle:signature="DGJ3ON9L/KHFuP/CjpLzHna6SuchWVfdG+xP7qXWX2rKJhbSchAtlSSt8iq/OP8G5u31tvMl3G//M8UQS0ybBg==" />
     </item>
   </channel>
 </rss>
