@@ -36,6 +36,7 @@ internal static class DatRecordMaps {
                     var physics = ToDict(gfx.Physics.RawPolygonsEntries);
                     gfx.PhysicsPolygons = physics.ToDictionary(kv => (ushort)kv.Key, kv => kv.Value);
                 }
+                DatBspHydrator.Hydrate(gfx);
                 break;
             case CellStruct cell:
                 HydrateCellStruct(cell);
@@ -139,6 +140,7 @@ internal static class DatRecordMaps {
         };
         cell.Polygons = ToUshortPolyMap(cell.PolygonsEntries);
         cell.PhysicsPolygons = ToUshortPolyMap(cell.RawPhysicsPolygonsEntries);
+        DatBspHydrator.Hydrate(cell);
     }
 
     private static void FlattenCellStruct(CellStruct cell) {
