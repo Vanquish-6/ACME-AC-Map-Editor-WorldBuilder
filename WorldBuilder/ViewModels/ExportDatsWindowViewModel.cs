@@ -19,7 +19,7 @@ namespace WorldBuilder.ViewModels {
         private readonly Project _project;
         private readonly Window _window;
         private readonly InstanceRepositionService _repositionService;
-        private readonly string[] datFiles = new[]
+        private readonly string[] _retailDatFiles = new[]
         {
             "client_cell_1.dat",
             "client_portal.dat",
@@ -27,6 +27,8 @@ namespace WorldBuilder.ViewModels {
             "client_local_English.dat"
         };
         private bool _isValidating;
+
+        public bool IsLegacyExport => _project.DatMode == DatProjectMode.LegacyPreTod;
 
         [ObservableProperty]
         private string _exportDirectory = string.Empty;
@@ -109,8 +111,16 @@ namespace WorldBuilder.ViewModels {
             _repositionService = repositionService;
 
             ExportDirectory = _settings.App.ProjectsDirectory;
-            CurrentPortalIteration = _project.DocumentManager.Dats.GetIteration(DatArchive.Portal);
-            PortalIteration = _project.DocumentManager.Dats.GetIteration(DatArchive.Portal);
+            int iteration = 1;
+            try {
+                iteration = _project.DocumentManager.Dats.GetIteration(DatArchive.Portal);
+            }
+            catch (Exception ex) {
+                Console.WriteLine($"[Export] Portal iteration was not readable: {ex.Message}");
+            }
+
+            CurrentPortalIteration = iteration;
+            PortalIteration = iteration > 0 ? iteration : 1;
 
             // Load saved world database settings from project, else pre-fill from app settings
             if (_project.AceDb != null) {
@@ -187,7 +197,7 @@ namespace WorldBuilder.ViewModels {
 
             try {
                 if (!OverwriteFiles) {
-                    foreach (var datFile in datFiles) {
+                    foreach (var datFile in ExportFileNames()) {
                         var filePath = Path.Combine(ExportDirectory, datFile);
                         if (File.Exists(filePath)) {
                             DirectoryErrorMessage = $"File {datFile} already exists. Check 'Overwrite existing DAT files' to replace.";
@@ -261,7 +271,9 @@ namespace WorldBuilder.ViewModels {
                 await CloseDialogHostSafeAsync(progressDialogTask);
                 progressDialogTask = null;
 
-                var successMsg = "DAT files exported successfully!";
+                var successMsg = IsLegacyExport
+                    ? "Legacy cell.dat and portal.dat exported."
+                    : "DAT files exported successfully!";
                 if (repoResult != null) {
                     if (repoResult.Error != null) {
                         successMsg += $"\n\nReposition warning: {repoResult.Error}";
@@ -395,7 +407,7 @@ namespace WorldBuilder.ViewModels {
                     HasDirectoryError = true;
                 }
 
-                if (PortalIteration <= 0) {
+                if (!IsLegacyExport && PortalIteration <= 0) {
                     IterationErrorMessage = "Portal iteration must be greater than 0.";
                     HasIterationError = true;
                 }
@@ -406,6 +418,19 @@ namespace WorldBuilder.ViewModels {
             finally {
                 _isValidating = false;
             }
+        }
+
+        string[] ExportFileNames() {
+            if (!IsLegacyExport) {
+                return _retailDatFiles;
+            }
+
+            var files = new List<string> { "cell.dat", "portal.dat" };
+            if (File.Exists(Path.Combine(_project.BaseDatDirectory, "language.dat"))) {
+                files.Add("language.dat");
+            }
+
+            return files.ToArray();
         }
     }
 }

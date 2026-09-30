@@ -241,11 +241,9 @@ namespace WorldBuilder.Editors.Landscape.ViewModels {
             Viewports.Add(orthoViewport);
 
             Tools.Add(TerrainSystem.Services.GetRequiredService<SelectorToolViewModel>());
-            if (!IsReadOnlyProject) {
-                Tools.Add(TerrainSystem.Services.GetRequiredService<TexturePaintingToolViewModel>());
-                Tools.Add(TerrainSystem.Services.GetRequiredService<RoadDrawingToolViewModel>());
-                Tools.Add(TerrainSystem.Services.GetRequiredService<HeightToolViewModel>());
-            }
+            Tools.Add(TerrainSystem.Services.GetRequiredService<TexturePaintingToolViewModel>());
+            Tools.Add(TerrainSystem.Services.GetRequiredService<RoadDrawingToolViewModel>());
+            Tools.Add(TerrainSystem.Services.GetRequiredService<HeightToolViewModel>());
 
             // Restore last selected tool/sub-tool from settings, or default to first
             var uiState = Settings.Landscape.UIState;
@@ -459,7 +457,6 @@ namespace WorldBuilder.Editors.Landscape.ViewModels {
                         BookmarksPanel?.AddBookmark();
                         return;
                     case Avalonia.Input.Key.Z:
-                        if (IsReadOnlyProject) return;
                         if (shift)
                             TerrainSystem?.History?.Redo();
                         else
@@ -467,24 +464,19 @@ namespace WorldBuilder.Editors.Landscape.ViewModels {
                         TerrainSystem?.Scene.InvalidateStaticObjectsCache();
                         return;
                     case Avalonia.Input.Key.Y:
-                        if (IsReadOnlyProject) return;
                         TerrainSystem?.History?.Redo();
                         TerrainSystem?.Scene.InvalidateStaticObjectsCache();
                         return;
                     case Avalonia.Input.Key.C:
-                        if (IsReadOnlyProject) return;
                         CopySelectedObject();
                         return;
                     case Avalonia.Input.Key.V:
-                        if (IsReadOnlyProject) return;
                         PasteObject();
                         return;
                     case Avalonia.Input.Key.D:
-                        if (IsReadOnlyProject) return;
                         DuplicateSelection();
                         return;
                     case Avalonia.Input.Key.S:
-                        if (IsReadOnlyProject) return;
                         SaveLandscapeCommand.Execute(null);
                         return;
                 }
@@ -501,7 +493,6 @@ namespace WorldBuilder.Editors.Landscape.ViewModels {
                     AdjustActiveBrushRadius(1f);
                     break;
                 case Avalonia.Input.Key.Delete:
-                    if (IsReadOnlyProject) return;
                     DeleteSelectedObject();
                     break;
                 case Avalonia.Input.Key.Escape:
@@ -1151,14 +1142,12 @@ namespace WorldBuilder.Editors.Landscape.ViewModels {
 
         [RelayCommand]
         public void Undo() {
-            if (IsReadOnlyProject) return;
             TerrainSystem?.History?.Undo();
             TerrainSystem?.Scene.InvalidateStaticObjectsCache();
         }
 
         [RelayCommand]
         public void Redo() {
-            if (IsReadOnlyProject) return;
             TerrainSystem?.History?.Redo();
             TerrainSystem?.Scene.InvalidateStaticObjectsCache();
         }
@@ -1406,7 +1395,6 @@ namespace WorldBuilder.Editors.Landscape.ViewModels {
 
         [RelayCommand]
         public void CopySelectedObject() {
-            if (IsReadOnlyProject) return;
             var sel = TerrainSystem?.EditingContext.ObjectSelection;
             if (sel == null || !sel.HasSelection || sel.SelectedObject == null) return;
             _copiedObject = sel.SelectedObject.Value;
@@ -1415,7 +1403,7 @@ namespace WorldBuilder.Editors.Landscape.ViewModels {
 
         [RelayCommand]
         public void PasteObject() {
-            if (IsReadOnlyProject || _copiedObject == null || TerrainSystem == null) return;
+            if (_copiedObject == null || TerrainSystem == null) return;
             var src = _copiedObject.Value;
             var sel = TerrainSystem.EditingContext.ObjectSelection;
             var duplicate = new StaticObject {
@@ -1434,7 +1422,6 @@ namespace WorldBuilder.Editors.Landscape.ViewModels {
 
         [RelayCommand]
         public void DeleteSelectedObject() {
-            if (IsReadOnlyProject) return;
             var sel = TerrainSystem?.EditingContext.ObjectSelection;
             if (sel == null) return;
 

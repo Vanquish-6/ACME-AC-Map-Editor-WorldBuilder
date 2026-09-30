@@ -49,7 +49,12 @@
                             Text="{Binding DirectoryErrorMessage}" />
                     </StackPanel>
 
-                    <StackPanel>
+                    <TextBlock
+                        IsVisible="{Binding IsLegacyExport}"
+                        Text="This project uses legacy pre-ToD DATs. Export writes cell.dat and portal.dat in that same format."
+                        TextWrapping="Wrap" />
+
+                    <StackPanel IsVisible="{Binding !IsLegacyExport}">
                         <TextBlock
                             Margin="0,0,0,5"
                             FontWeight="SemiBold"

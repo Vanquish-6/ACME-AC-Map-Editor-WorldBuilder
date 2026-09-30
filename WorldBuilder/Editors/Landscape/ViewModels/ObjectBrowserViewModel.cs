@@ -631,11 +631,6 @@ namespace WorldBuilder.Editors.Landscape.ViewModels {
 
         [RelayCommand]
         private void SelectForPlacement(ObjectBrowserItem item) {
-            if (_context.Project?.IsReadOnlyDatProject == true) {
-                Status = "Legacy pre-ToD projects are read-only. Object placement is disabled.";
-                return;
-            }
-
             if (item != null && !item.IsParticleEmitter && !item.WeenieClassId.HasValue && IsGfxObjDid(item.Id)) {
                 Status = "GfxObj meshes can't be placed — pick a Setup or weenie.";
                 return;

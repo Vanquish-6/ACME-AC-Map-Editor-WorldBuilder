@@ -18,7 +18,8 @@ namespace WorldBuilder.Tests {
                 Assert.True(ok);
                 Assert.Equal(DatProjectMode.LegacyPreTod, mode);
                 Assert.Empty(errors);
-                Assert.Contains("read-only", summary, StringComparison.OrdinalIgnoreCase);
+                Assert.Contains("portal.dat", summary, StringComparison.OrdinalIgnoreCase);
+                Assert.Contains("cell.dat", summary, StringComparison.OrdinalIgnoreCase);
             }
             finally {
                 Directory.Delete(dir, recursive: true);
@@ -818,6 +819,100 @@ namespace WorldBuilder.Tests {
         }
 
         [Fact]
+        public void DecodeLegacySurfaceTexture_KeepsPackedRgbAndAlphaPayloads() {
+            uint rgbId = LegacyDatDecoders.CreateSyntheticRenderSurfaceId(0x0500146B);
+            var rgb = new byte[16 + 3];
+            var writer = new DatBinWriter(rgb);
+            writer.WriteUInt32(0x0500146B);
+            writer.WriteUInt32(10);
+            writer.WriteInt32(1);
+            writer.WriteInt32(1);
+            writer.WriteByte(0x11);
+            writer.WriteByte(0x22);
+            writer.WriteByte(0x33);
+
+            Assert.True(LegacyDatDecoders.TryDecodeSurfaceTexture(
+                rgb.AsSpan(0, writer.Offset).ToArray(),
+                LegacyDatVersion.DarkMajesty,
+                rgbId,
+                out _,
+                out var rgbSurface));
+            Assert.Equal((uint)PixelFormat.PFID_R8G8B8, rgbSurface!.Format);
+            Assert.Equal(new byte[] { 0x11, 0x22, 0x33 }, rgbSurface.SourceData);
+
+            uint planarId = LegacyDatDecoders.CreateSyntheticRenderSurfaceId(0x05001456);
+            var planar = new byte[16 + 6];
+            writer = new DatBinWriter(planar);
+            writer.WriteUInt32(0x05001456);
+            writer.WriteUInt32(10);
+            writer.WriteInt32(2);
+            writer.WriteInt32(1);
+            writer.WriteByte(0x10);
+            writer.WriteByte(0x20);
+            writer.WriteByte(0x30);
+            writer.WriteByte(0x40);
+            writer.WriteByte(0x50);
+            writer.WriteByte(0x60);
+            Assert.True(LegacyDatDecoders.TryDecodeSurfaceTexture(
+                planar.AsSpan(0, writer.Offset).ToArray(),
+                LegacyDatVersion.DarkMajesty,
+                planarId,
+                out _,
+                out var planarSurface));
+            Assert.Equal(new byte[] { 0x10, 0x30, 0x50, 0x20, 0x40, 0x60 }, planarSurface!.SourceData);
+
+            uint alphaId = LegacyDatDecoders.CreateSyntheticRenderSurfaceId(0x0500168E);
+            var alpha = new byte[16 + 1];
+            writer = new DatBinWriter(alpha);
+            writer.WriteUInt32(0x0500168E);
+            writer.WriteUInt32(11);
+            writer.WriteInt32(1);
+            writer.WriteInt32(1);
+            writer.WriteByte(0xAB);
+
+            Assert.True(LegacyDatDecoders.TryDecodeSurfaceTexture(
+                alpha.AsSpan(0, writer.Offset).ToArray(),
+                LegacyDatVersion.DarkMajesty,
+                alphaId,
+                out _,
+                out var alphaSurface));
+            Assert.Equal((uint)PixelFormat.PFID_A8, alphaSurface!.Format);
+            Assert.Equal(new byte[] { 0xAB }, alphaSurface.SourceData);
+        }
+
+        [Fact]
+        public void DecodeLegacySurface_ReadsEmbeddedIdAndTexture() {
+            byte[] image = [
+                0x79, 0x0B, 0x00, 0x08,
+                0x02, 0x00, 0x00, 0x00,
+                0xF5, 0x0F, 0x00, 0x05,
+                0xB4, 0x0B, 0x00, 0x04,
+                0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x80, 0x3F,
+            ];
+            Assert.True(LegacyDatDecoders.TryDecodeLegacySurface(image, out var surface));
+            Assert.NotNull(surface);
+            Assert.Equal(0x08000B79u, surface!.Id);
+            Assert.Equal(SurfaceType.Base1Image, surface.Type);
+            Assert.Equal(0x05000FF5u, surface.OrigTextureId);
+            Assert.Equal(0x04000BB4u, surface.OrigPaletteId);
+            Assert.Equal(1f, surface.Diffuse);
+
+            byte[] solid = [
+                0xA6, 0x06, 0x00, 0x08,
+                0x01, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0xFF,
+                0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x80, 0x3F,
+            ];
+            Assert.True(LegacyDatDecoders.TryDecodeLegacySurface(solid, out var color));
+            Assert.Equal(SurfaceType.Base1Solid, color!.Type);
+            Assert.Equal(0xFF000000u, color.ColorValue);
+        }
+
+        [Fact]
         public void DecodeLegacyDirectRenderSurface_NormalizesRgb888IntoRetailBgra() {
             var buffer = new byte[64];
             var writer = new DatBinWriter(buffer);
@@ -843,6 +938,112 @@ namespace WorldBuilder.Tests {
                 0x33, 0x22, 0x11, 0xFF,
                 0x66, 0x55, 0x44, 0xFF,
             }, renderSurface.SourceData);
+        }
+
+        [Fact]
+        public void EncodeLegacyEnvCell_RoundTripsPositionAndTrailingBytes() {
+            byte[] original = [
+                0x00, 0x00, 0x00, 0x00,
+                0x00, 0x01, 0x01, 0x00,
+                0x00, 0x00, 0x00, 0x00,
+                0x07, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x80, 0x3F,
+                0x00, 0x00, 0x00, 0x40,
+                0x00, 0x00, 0x40, 0x40,
+                0x00, 0x00, 0x80, 0x3F,
+                0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00,
+                0x00, 0x00, 0x00, 0x00,
+                0xEE,
+            ];
+
+            Assert.True(LegacyDatDecoders.TryDecodeLegacyEnvCell(original, out var cell));
+            Assert.NotNull(cell);
+            Assert.Equal(0x00010100u, cell.Id);
+            Assert.Equal(7u, cell.EnvironmentId);
+            Assert.Equal(1f, cell.PositionOriginArray[0]);
+            Assert.Equal(2f, cell.PositionOriginArray[1]);
+            Assert.Equal(3f, cell.PositionOriginArray[2]);
+            cell.PositionOriginArray[2] = 9f;
+            byte[] encoded = LegacyDatDecoders.EncodeLegacyEnvCell(cell);
+            Assert.Equal(original.Length, encoded.Length);
+            Assert.Equal(0xEE, encoded[^1]);
+            Assert.True(LegacyDatDecoders.TryDecodeLegacyEnvCell(encoded, out var again));
+            Assert.Equal(9f, again!.PositionOriginArray[2]);
+        }
+
+        [Fact]
+        public void LegacySameSizeWriter_PatchesLandblockAndPortalImage() {
+            string dir = Path.Combine(Path.GetTempPath(), $"acme-legacy-export-{Guid.NewGuid():N}");
+            Directory.CreateDirectory(dir);
+            try {
+                byte[] landBlock = new byte[252];
+                BitConverter.GetBytes(0x1234FFFFu).CopyTo(landBlock, 0);
+                BitConverter.GetBytes(1u).CopyTo(landBlock, 4);
+                BitConverter.GetBytes((ushort)(1 | (5 << 2) | (3 << 11))).CopyTo(landBlock, 8);
+                landBlock[170] = 42;
+                landBlock[251] = 0xAB;
+                WriteMinimalDmPortal(Path.Combine(dir, "cell.dat"), 0x1234FFFF, landBlock);
+
+                byte[] originalImage = LegacyDirectRenderSurface.Encode(0x06000066, 2, 1, [0x11, 0x22, 0x33, 0x44, 0x55, 0x66]);
+                byte[] updatedImage = LegacyDirectRenderSurface.Encode(0x06000066, 2, 1, [0xAA, 0xBB, 0xCC, 0x01, 0x02, 0x03]);
+                WriteMinimalDmPortal(Path.Combine(dir, "portal.dat"), 0x06000066, originalImage);
+
+                using (var writer = new LegacyDatSameSizeWriter(dir)) {
+                    Assert.True(writer.TryGetLandblock(0x1234FFFF, out var block));
+                    block.Height[0] = 99;
+                    Assert.True(writer.TrySaveLandblock(block));
+                    Assert.True(writer.TryWriteFileBytes(DatArchive.Portal, 0x06000066, updatedImage));
+                    Assert.False(writer.TryWriteFileBytes(DatArchive.Portal, 0x06000067, updatedImage));
+                    Assert.Contains(writer.Failures, failure => failure.Contains("0x06000067", StringComparison.Ordinal));
+                }
+
+                Assert.True(LegacyPortalImageWriter.TryRead(Path.Combine(dir, "portal.dat"), 0x06000066, out byte[]? image));
+                Assert.Equal(updatedImage, image);
+                using var cell = new LegacyDatDatabase(Path.Combine(dir, "cell.dat"), isCellDatabase: true);
+                Assert.True(cell.TryReadFileBytes(0x1234FFFF, out byte[]? saved));
+                Assert.Equal(99, saved![170]);
+                Assert.Equal(0xAB, saved[251]);
+                Assert.False(File.Exists(Path.Combine(dir, "client_portal.dat")));
+            }
+            finally {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+
+        [Fact]
+        public void LegacyPortalImageWriter_ReplacesSameSizeRgbRecord() {
+            byte[] original = LegacyDirectRenderSurface.Encode(0x06000066, 2, 1, [0x11, 0x22, 0x33, 0x44, 0x55, 0x66]);
+            byte[] updated = LegacyDirectRenderSurface.Encode(0x06000066, 2, 1, [0xAA, 0xBB, 0xCC, 0x01, 0x02, 0x03]);
+            string path = Path.Combine(Path.GetTempPath(), $"acme-legacy-portal-{Guid.NewGuid():N}.dat");
+            try {
+                WriteMinimalDmPortal(path, 0x06000066, original);
+                LegacyPortalImageWriter.Apply(path, new Dictionary<uint, byte[]> { [0x06000066] = updated });
+                Assert.True(LegacyPortalImageWriter.TryRead(path, 0x06000066, out byte[]? read));
+                Assert.Equal(updated, read);
+            }
+            finally {
+                if (File.Exists(path)) File.Delete(path);
+            }
+        }
+
+        static void WriteMinimalDmPortal(string path, uint fileId, byte[] fileBytes) {
+            const int root = 0x800;
+            const int fileSector = 0x1000;
+            var file = new byte[fileSector + 4 + fileBytes.Length];
+            void U32(int offset, uint value) => BitConverter.GetBytes(value).CopyTo(file, offset);
+
+            U32(0x12C, 0x5442);
+            U32(0x130, 1024);
+            U32(0x138, 1);
+            U32(0x148, root);
+            U32(root + 4 + (0x25 * 4), 1);
+            int entry = root + 4 + (0x25 * 4) + 4;
+            U32(entry, fileId);
+            U32(entry + 4, fileSector);
+            U32(entry + 8, (uint)fileBytes.Length);
+            fileBytes.CopyTo(file, fileSector + 4);
+            File.WriteAllBytes(path, file);
         }
 
         [Fact]

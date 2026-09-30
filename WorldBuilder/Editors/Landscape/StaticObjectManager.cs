@@ -840,7 +840,34 @@ namespace WorldBuilder.Editors.Landscape {
                     else {
                         if (!_dats.TryGet<Palette>(paletteId, out var paletteData))
                             throw new Exception($"Unable to load Palette: 0x{paletteId:X8}");
-                        TextureHelpers.FillIndex16(renderSurface.SourceData, paletteData, textureData.AsSpan(), w, h, isClipMap, expand256Palette);
+                        if (LegacyDatReader.IsSyntheticRenderSurfaceId(renderSurface.Id)) {
+                            // The DM client samples legacy INDEX8 palettes as opaque
+                            // 16-bit colors. Palette ARGB alpha is not an object
+                            // transparency channel; using it directly can make
+                            // human skin/clothing disappear when old palettes
+                            // carry alpha 0.
+                            var legacyColors = paletteData.ColorValues;
+                            for (int i = 0; i < legacyColors.Length; i++) {
+                                legacyColors[i].Alpha = 0xFF;
+                            }
+                            TextureHelpers.FillIndex16(
+                                renderSurface.SourceData,
+                                legacyColors,
+                                textureData.AsSpan(),
+                                w,
+                                h,
+                                isClipMap);
+                        }
+                        else {
+                            TextureHelpers.FillIndex16(
+                                renderSurface.SourceData,
+                                paletteData,
+                                textureData.AsSpan(),
+                                w,
+                                h,
+                                isClipMap,
+                                expand256Palette);
+                        }
                         // Store in cache for future sessions (only when using the default DAT palette)
                         _textureCache?.Store(surfaceId, paletteId, textureData);
                     }

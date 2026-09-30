@@ -40,14 +40,11 @@ namespace WorldBuilder.Editors.Landscape.ViewModels {
             _context = context;
             _commandHistory = commandHistory;
             SubTools.Add(selectSubTool);
-
-            if (context.Project?.IsReadOnlyDatProject != true) {
-                SubTools.Add(moveSubTool);
-                SubTools.Add(rotateSubTool);
-                SubTools.Add(scaleSubTool);
-                SubTools.Add(cloneSubTool);
-                SubTools.Add(pasteSubTool);
-            }
+            SubTools.Add(moveSubTool);
+            SubTools.Add(rotateSubTool);
+            SubTools.Add(scaleSubTool);
+            SubTools.Add(cloneSubTool);
+            SubTools.Add(pasteSubTool);
         }
 
         private TransformGizmo? Gizmo => _context.TerrainSystem.Scene?._gizmo;

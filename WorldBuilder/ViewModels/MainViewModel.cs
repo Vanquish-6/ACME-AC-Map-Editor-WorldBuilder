@@ -108,7 +108,7 @@ public partial class MainViewModel : ViewModelBase {
         _ => "Choose World or Dungeon to build scenes, or Content to edit game data."
     };
     public string ProjectModeText => IsReadOnlyDatProject
-        ? "Legacy pre-ToD DATs loaded. View-only mode is active."
+        ? "Legacy pre-ToD project. File → Export DATs writes cell.dat and portal.dat. Convert Legacy DATs To Retail writes client DATs."
         : "Retail DAT project loaded.";
 
     public KeyGesture? ExitGesture => _inputManager.GetKeyGesture(InputActions.AppExit);
@@ -233,35 +233,30 @@ public partial class MainViewModel : ViewModelBase {
 
     [RelayCommand]
     private void Undo() {
-        if (IsReadOnlyDatProject) return;
         if (ActiveEditor is DungeonEditorViewModel de) { de.UndoCommand.Execute(null); return; }
         GetLandscapeEditor()?.UndoCommand.Execute(null);
     }
 
     [RelayCommand]
     private void Redo() {
-        if (IsReadOnlyDatProject) return;
         if (ActiveEditor is DungeonEditorViewModel de) { de.RedoCommand.Execute(null); return; }
         GetLandscapeEditor()?.RedoCommand.Execute(null);
     }
 
     [RelayCommand]
     private void Copy() {
-        if (IsReadOnlyDatProject) return;
         if (ActiveEditor is DungeonEditorViewModel de) { de.CopySelectedCells(); return; }
         GetLandscapeEditor()?.CopySelectedObjectCommand.Execute(null);
     }
 
     [RelayCommand]
     private void Paste() {
-        if (IsReadOnlyDatProject) return;
         if (ActiveEditor is DungeonEditorViewModel de) { de.PasteCells(); return; }
         GetLandscapeEditor()?.PasteObjectCommand.Execute(null);
     }
 
     [RelayCommand]
     private void Duplicate() {
-        if (IsReadOnlyDatProject) return;
         if (ActiveEditor is DungeonEditorViewModel de) { de.DuplicateSelection(); return; }
         GetLandscapeEditor()?.DuplicateSelection();
     }
@@ -274,7 +269,6 @@ public partial class MainViewModel : ViewModelBase {
 
     [RelayCommand]
     private void Delete() {
-        if (IsReadOnlyDatProject) return;
         if (ActiveEditor is DungeonEditorViewModel de) {
             if (de.HasSelectedObject) de.DeleteSelectedObjectCommand.Execute(null);
             else de.DeleteSelectedCellCommand.Execute(null);
@@ -321,13 +315,6 @@ public partial class MainViewModel : ViewModelBase {
 
     [RelayCommand]
     private async Task OpenExportDatsWindow() {
-        if (IsReadOnlyDatProject) {
-            await ShowLegacyModeDialogAsync(
-                "Export unavailable",
-                "Legacy pre-ToD projects are opened in read-only mode. Export and DAT mutation are only available for retail DAT projects.");
-            return;
-        }
-
         if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop) {
             if (desktop.MainWindow == null) throw new Exception("Unable to open export DATs window, main window is null.");
 
@@ -545,49 +532,41 @@ public partial class MainViewModel : ViewModelBase {
 
     [RelayCommand]
     private void SwitchToDungeonEditor() {
-        if (TryShowUnsupportedLegacyEditor("Dungeon Editor")) return;
         ActiveEditor = ProjectManager.Instance?.GetProjectService<DungeonEditorViewModel>();
     }
 
     [RelayCommand]
     private void SwitchToSpellEditor() {
-        if (TryShowUnsupportedLegacyEditor("Spell Editor")) return;
         ActiveEditor = ProjectManager.Instance?.GetProjectService<SpellEditorViewModel>();
     }
 
     [RelayCommand]
     private void SwitchToSpellSetEditor() {
-        if (TryShowUnsupportedLegacyEditor("Spell Set Editor")) return;
         ActiveEditor = ProjectManager.Instance?.GetProjectService<SpellSetEditorViewModel>();
     }
 
     [RelayCommand]
     private void SwitchToSkillEditor() {
-        if (TryShowUnsupportedLegacyEditor("Skill Editor")) return;
         ActiveEditor = ProjectManager.Instance?.GetProjectService<SkillEditorViewModel>();
     }
 
     [RelayCommand]
     private void SwitchToExperienceEditor() {
-        if (TryShowUnsupportedLegacyEditor("Experience Table Editor")) return;
         ActiveEditor = ProjectManager.Instance?.GetProjectService<ExperienceEditorViewModel>();
     }
 
     [RelayCommand]
     private void SwitchToVitalEditor() {
-        if (TryShowUnsupportedLegacyEditor("Vital Table Editor")) return;
         ActiveEditor = ProjectManager.Instance?.GetProjectService<VitalEditorViewModel>();
     }
 
     [RelayCommand]
     private void SwitchToCharGenEditor() {
-        if (TryShowUnsupportedLegacyEditor("Character Creation Editor")) return;
         ActiveEditor = ProjectManager.Instance?.GetProjectService<CharGenEditorViewModel>();
     }
 
     [RelayCommand]
     private void SwitchToLayoutEditor() {
-        if (TryShowUnsupportedLegacyEditor("UI Layout Viewer")) return;
         ActiveEditor = ProjectManager.Instance?.GetProjectService<LayoutEditorViewModel>();
     }
 
@@ -598,19 +577,16 @@ public partial class MainViewModel : ViewModelBase {
 
     [RelayCommand]
     private void SwitchToWeenieEditor() {
-        if (TryShowUnsupportedLegacyEditor("Weenie Editor")) return;
         ActiveEditor = ProjectManager.Instance?.GetProjectService<WeenieEditorViewModel>();
     }
 
     [RelayCommand]
     private void SwitchToMonsterEditor() {
-        if (TryShowUnsupportedLegacyEditor("Monster Creator")) return;
         ActiveEditor = ProjectManager.Instance?.GetProjectService<MonsterEditorViewModel>();
     }
 
     [RelayCommand]
     private void AnalyzeDungeonRooms() {
-        if (TryShowUnsupportedLegacyEditor("Dungeon analysis")) return;
         var dungeonEditor = ProjectManager.Instance?.GetProjectService<DungeonEditorViewModel>();
         dungeonEditor?.AnalyzeRoomsCommand.Execute(null);
     }
@@ -662,19 +638,6 @@ public partial class MainViewModel : ViewModelBase {
         if (le != null) await le.ImportHeightmapCommand.ExecuteAsync(null);
     }
 
-    private bool TryShowUnsupportedLegacyEditor(string editorName) {
-        if (!IsReadOnlyDatProject) {
-            return false;
-        }
-
-        ActiveEditor = new ReadOnlyInfoViewModel(
-            editorName,
-            "Legacy pre-ToD projects currently support the Landscape viewer and Object Debug viewer only. This session is read-only, so retail-only editors and mutation tools are disabled.",
-            actionText: "Convert Legacy DATs To Retail...",
-            actionCommand: ConvertLegacyDatsToRetailCommand);
-        return true;
-    }
-
     private async Task<string?> PickFolderAsync(string title, string startDirectory) {
         IStorageFolder? suggested = null;
         if (Directory.Exists(startDirectory)) {
@@ -688,21 +651,5 @@ public partial class MainViewModel : ViewModelBase {
         });
 
         return folders.Count == 0 ? null : folders[0].TryGetLocalPath();
-    }
-
-    private static async Task ShowLegacyModeDialogAsync(string title, string message) {
-        await DialogHost.Show(new StackPanel {
-            Margin = new Thickness(18),
-            Spacing = 10,
-            Children = {
-                new TextBlock { Text = title, FontSize = 16, FontWeight = Avalonia.Media.FontWeight.Bold },
-                new TextBlock { Text = message, TextWrapping = Avalonia.Media.TextWrapping.Wrap, MaxWidth = 420 },
-                new Button {
-                    Content = "OK",
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    Command = new RelayCommand(() => DialogHost.Close("MainDialogHost"))
-                }
-            }
-        }, "MainDialogHost");
     }
 }

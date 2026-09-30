@@ -18,6 +18,7 @@ namespace WorldBuilder.Shared.Documents {
     public partial class PortalDatDocument : BaseDocument {
         public override string Type => nameof(PortalDatDocument);
         public const string DocumentId = "portal_tables";
+        public const string LegacyPortalFileType = "LegacyPortalFile";
 
         private PortalDatData _data = new();
         private readonly Dictionary<uint, object> _objectCache = new();
@@ -75,6 +76,33 @@ namespace WorldBuilder.Shared.Documents {
             return false;
         }
 
+        /// <summary>
+        /// Stores an exact legacy portal file image. These bytes are written back into
+        /// <c>portal.dat</c> at the same size; they are not retail <see cref="RenderSurface"/> records.
+        /// </summary>
+        public void SetLegacyPortalFile(uint fileId, byte[] fileBytes) {
+            ArgumentNullException.ThrowIfNull(fileBytes);
+            _objectCache.Remove(fileId);
+            _unpackFailures.Remove(fileId);
+            _data.Entries[fileId] = new PortalDatEntry {
+                TypeName = LegacyPortalFileType,
+                Data = fileBytes,
+            };
+            MarkDirty();
+            OnUpdate(new BaseDocumentEvent());
+        }
+
+        public IReadOnlyDictionary<uint, byte[]> GetLegacyPortalFiles() {
+            var files = new Dictionary<uint, byte[]>();
+            foreach (var (fileId, entry) in _data.Entries) {
+                if (entry.TypeName == LegacyPortalFileType && entry.Data.Length > 0) {
+                    files[fileId] = entry.Data;
+                }
+            }
+
+            return files;
+        }
+
         public void RemoveEntry(uint fileId) {
             _data.Entries.Remove(fileId);
             _objectCache.Remove(fileId);
@@ -115,6 +143,10 @@ namespace WorldBuilder.Shared.Documents {
                 bool saved = false;
                 if (_objectCache.TryGetValue(fileId, out var cachedObj)) {
                     saved = TrySaveTyped(datwriter, cachedObj, iteration);
+                }
+
+                if (!saved && entry.TypeName == LegacyPortalFileType) {
+                    continue;
                 }
 
                 if (!saved && entry.Data.Length > 0) {

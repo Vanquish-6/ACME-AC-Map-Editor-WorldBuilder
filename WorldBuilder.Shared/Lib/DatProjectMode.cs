@@ -33,7 +33,7 @@ namespace WorldBuilder.Shared.Lib {
 
         public static string GetCapabilitySummary(DatProjectMode mode) => mode switch {
             DatProjectMode.Retail => "Retail DATs detected. Full editor and export support is available.",
-            DatProjectMode.LegacyPreTod => "Legacy pre-ToD DATs detected. This project will open in read-only view mode.",
+            DatProjectMode.LegacyPreTod => "Legacy pre-ToD DATs detected. Export writes cell.dat and portal.dat. Convert to Retail writes client DATs.",
             _ => "Unknown DAT mode.",
         };
 

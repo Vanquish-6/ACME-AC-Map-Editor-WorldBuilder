@@ -10,6 +10,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Runtime.CompilerServices;
+using Acme.Render.GL.Lib;
 using WorldBuilder.Shared.Lib;
 
 namespace WorldBuilder.Editors.Landscape {
@@ -411,21 +412,89 @@ namespace WorldBuilder.Editors.Landscape {
         }
 
         private void LoadTerrainTextureBytes(uint surfaceTextureId, Span<byte> bytes) {
-            if (TryLoadRenderSurface(surfaceTextureId, out var texture)) {
-                GetTerrainTexture(texture, bytes);
-                return;
+            try {
+                if (TryLoadRenderSurface(surfaceTextureId, out var texture)) {
+                    if (texture.FormatEnum == PixelFormat.PFID_INDEX16) {
+                        GetIndexedTerrainTexture(texture, bytes);
+                        return;
+                    }
+
+                    if (texture.FormatEnum == PixelFormat.PFID_R8G8B8) {
+                        GetRgbTerrainTexture(texture, bytes);
+                        return;
+                    }
+
+                    GetTerrainTexture(texture, bytes);
+                    return;
+                }
+            }
+            catch (Exception ex) {
+                Console.WriteLine($"[Terrain] Texture 0x{surfaceTextureId:X8} could not be decoded: {ex.Message}");
             }
 
             FillPlaceholderTerrainTexture(bytes);
         }
 
         private void LoadAlphaTextureBytes(uint surfaceTextureId, Span<byte> bytes) {
-            if (TryLoadRenderSurface(surfaceTextureId, out var texture)) {
-                GetAlphaTexture(texture, bytes);
-                return;
+            try {
+                if (TryLoadRenderSurface(surfaceTextureId, out var texture)) {
+                    if (texture.FormatEnum == PixelFormat.PFID_INDEX16) {
+                        GetIndexedAlphaTexture(texture, bytes);
+                        return;
+                    }
+
+                    GetAlphaTexture(texture, bytes);
+                    return;
+                }
+            }
+            catch (Exception ex) {
+                Console.WriteLine($"[Terrain] Alpha 0x{surfaceTextureId:X8} could not be decoded: {ex.Message}");
             }
 
             FillPlaceholderAlphaTexture(bytes);
+        }
+
+        private void GetIndexedTerrainTexture(RenderSurface texture, Span<byte> bytes) {
+            var rgba = DecodeIndexedTexture(texture);
+            ResampleRgba(rgba, texture.Width, texture.Height, bytes, TerrainAtlasDimension, TerrainAtlasDimension, useRedAsGray: false);
+        }
+
+        private void GetIndexedAlphaTexture(RenderSurface texture, Span<byte> bytes) {
+            var rgba = DecodeIndexedTexture(texture);
+            ResampleRgba(rgba, texture.Width, texture.Height, bytes, TerrainAtlasDimension, TerrainAtlasDimension, useRedAsGray: true);
+        }
+
+        private void GetRgbTerrainTexture(RenderSurface texture, Span<byte> bytes) {
+            int pixelCount = texture.Width * texture.Height;
+            if (texture.SourceData.Length < pixelCount * 3) {
+                throw new Exception("RGB terrain texture source data is incomplete");
+            }
+
+            var rgba = new byte[pixelCount * 4];
+            for (int i = 0; i < pixelCount; i++) {
+                rgba[i * 4 + 0] = texture.SourceData[i * 3 + 0];
+                rgba[i * 4 + 1] = texture.SourceData[i * 3 + 1];
+                rgba[i * 4 + 2] = texture.SourceData[i * 3 + 2];
+                rgba[i * 4 + 3] = 255;
+            }
+
+            ResampleRgba(rgba, texture.Width, texture.Height, bytes, TerrainAtlasDimension, TerrainAtlasDimension, useRedAsGray: false);
+        }
+
+        private byte[] DecodeIndexedTexture(RenderSurface texture) {
+            int pixelCount = texture.Width * texture.Height;
+            if (texture.SourceData.Length < pixelCount * 2) {
+                throw new Exception("Indexed terrain texture source data is incomplete");
+            }
+
+            if (!_dats.TryGet<Palette>(texture.DefaultPaletteId, out var palette) || palette.Colors.Count == 0) {
+                throw new Exception($"Palette 0x{texture.DefaultPaletteId:X8} is missing for texture 0x{texture.Id:X8}");
+            }
+
+            var rgba = new byte[pixelCount * 4];
+            // Legacy INDEX8 texels are stored in the low byte. Do not stretch a 256-color palette to 2048 slots.
+            TextureHelpers.FillIndex16(texture.SourceData, palette, rgba, texture.Width, texture.Height, expand256Palette: false);
+            return rgba;
         }
 
         private void SetTerrainLayerTiling(int layerIndex, uint surfaceTextureId, uint texTiling) {
@@ -481,6 +550,30 @@ namespace WorldBuilder.Editors.Landscape {
                 bytes[i + 1] = 255;
                 bytes[i + 2] = 255;
                 bytes[i + 3] = 255;
+            }
+        }
+
+        private static void ResampleRgba(byte[] sourceData, int sourceWidth, int sourceHeight, Span<byte> data, int targetWidth, int targetHeight, bool useRedAsGray) {
+            for (int y = 0; y < targetHeight; y++) {
+                int sourceY = y * sourceHeight / targetHeight;
+                for (int x = 0; x < targetWidth; x++) {
+                    int sourceX = x * sourceWidth / targetWidth;
+                    int sourceIndex = (sourceY * sourceWidth + sourceX) * 4;
+                    byte value = useRedAsGray ? sourceData[sourceIndex] : (byte)0;
+                    int targetIndex = (y * targetWidth + x) * 4;
+                    if (useRedAsGray) {
+                        data[targetIndex + 0] = value;
+                        data[targetIndex + 1] = value;
+                        data[targetIndex + 2] = value;
+                        data[targetIndex + 3] = value;
+                    }
+                    else {
+                        data[targetIndex + 0] = sourceData[sourceIndex + 0];
+                        data[targetIndex + 1] = sourceData[sourceIndex + 1];
+                        data[targetIndex + 2] = sourceData[sourceIndex + 2];
+                        data[targetIndex + 3] = sourceData[sourceIndex + 3];
+                    }
+                }
             }
         }
 

@@ -208,6 +208,10 @@ namespace WorldBuilder.Shared.Models {
         public Action<string, IReadOnlyList<DungeonDocument>>? OnExportDungeonInstances { get; set; }
 
         public bool ExportDats(string exportDirectory, int portalIteration, Action<string>? onProgress = null) {
+            if (DatMode == DatProjectMode.LegacyPreTod) {
+                return ExportLegacyDats(exportDirectory, onProgress);
+            }
+
             if (!CanExportDats) {
                 throw new InvalidOperationException("Legacy pre-ToD projects are read-only and cannot be exported.");
             }
@@ -664,6 +668,296 @@ namespace WorldBuilder.Shared.Models {
 
             return true;
         }
+
+        bool ExportLegacyDats(string exportDirectory, Action<string>? onProgress) {
+            if (DocumentManager == null) {
+                throw new InvalidOperationException("The project is not open, so legacy DATs cannot be exported.");
+            }
+
+            if (!Directory.Exists(exportDirectory)) {
+                Directory.CreateDirectory(exportDirectory);
+            }
+
+            onProgress?.Invoke("Copying legacy cell.dat and portal.dat...");
+            foreach (string datFile in new[] { "cell.dat", "portal.dat", "language.dat" }) {
+                string sourcePath = Path.Combine(BaseDatDirectory, datFile);
+                if (!File.Exists(sourcePath)) {
+                    if (datFile == "language.dat") {
+                        continue;
+                    }
+
+                    throw new FileNotFoundException($"Legacy export requires {datFile} in the project base DAT folder.", sourcePath);
+                }
+
+                File.Copy(sourcePath, Path.Combine(exportDirectory, datFile), overwrite: true);
+            }
+
+            var terrainDoc = DocumentManager.GetOrCreateDocumentAsync<TerrainDocument>("terrain").Result;
+            var exportLayers = new List<TerrainLayer>();
+            if (terrainDoc.TerrainData.RootItems != null) {
+                CollectExportLayers(terrainDoc.TerrainData.RootItems, exportLayers);
+            }
+
+            var modifiedLandblocks = new HashSet<ushort>(terrainDoc.TerrainData.Landblocks.Keys);
+            var layerDocs = new Dictionary<string, LayerDocument>();
+            foreach (var layer in exportLayers) {
+                var layerDoc = DocumentManager.GetOrCreateDocumentAsync<LayerDocument>(layer.DocumentId).Result;
+                if (layerDoc == null) {
+                    continue;
+                }
+
+                layerDocs[layer.DocumentId] = layerDoc;
+                foreach (var lbKey in layerDoc.TerrainData.Landblocks.Keys) {
+                    modifiedLandblocks.Add(lbKey);
+                }
+            }
+
+            bool hasDocumentExports = false;
+            foreach (var (_, doc) in DocumentManager.ActiveDocs) {
+                if (doc is LandblockDocument lbDoc && (lbDoc.IsDirty || lbDoc.LoadedFromProjection)) {
+                    hasDocumentExports = true;
+                    break;
+                }
+
+                if (doc is DungeonDocument or PortalDatDocument { EntryCount: > 0 } or LayoutDatDocument { EntryCount: > 0 }) {
+                    hasDocumentExports = true;
+                    break;
+                }
+            }
+
+            bool hasCustomTextureExports = CustomTextures.Entries.Count > 0;
+            if (modifiedLandblocks.Count == 0 && !hasDocumentExports && !hasCustomTextureExports) {
+                onProgress?.Invoke("No DAT changes detected; copied legacy DATs left unchanged.");
+                return true;
+            }
+
+            const int landblockSize = 81;
+            onProgress?.Invoke($"Preparing {modifiedLandblocks.Count} terrain landblocks...");
+            var oldTerrain = new Dictionary<ushort, TerrainEntry[]>();
+            var newTerrain = new Dictionary<ushort, TerrainEntry[]>();
+            foreach (var lbKey in modifiedLandblocks) {
+                uint baseLbId = (uint)(lbKey << 16) | 0xFFFF;
+                if (!DatReaderWriter.TryGet<LandBlock>(baseLbId, out var baseLb)) {
+                    continue;
+                }
+
+                var entries = new TerrainEntry[landblockSize];
+                for (int i = 0; i < landblockSize; i++) {
+                    entries[i] = new TerrainEntry(
+                        ((TerrainInfo)baseLb.Terrain[i]).Road,
+                        ((TerrainInfo)baseLb.Terrain[i]).Scenery,
+                        (byte)((TerrainInfo)baseLb.Terrain[i]).Type,
+                        baseLb.Height[i]);
+                }
+
+                oldTerrain[lbKey] = entries;
+            }
+
+            using var writer = new LegacyDatSameSizeWriter(exportDirectory);
+            int terrainWritten = 0;
+            foreach (var lbKey in modifiedLandblocks) {
+                if (++terrainWritten % 1000 == 0) {
+                    onProgress?.Invoke($"Writing terrain {terrainWritten} / {modifiedLandblocks.Count}...");
+                }
+
+                uint lbId = (uint)(lbKey << 16) | 0xFFFF;
+                var currentEntries = terrainDoc.GetLandblockInternal(lbKey);
+                if (currentEntries == null || !writer.TryGet<LandBlock>(lbId, out var lb)) {
+                    continue;
+                }
+
+                var resolved = new byte[landblockSize];
+                foreach (var layer in exportLayers) {
+                    if (!layerDocs.TryGetValue(layer.DocumentId, out var layerDoc)) {
+                        continue;
+                    }
+
+                    if (!layerDoc.TerrainData.Landblocks.TryGetValue(lbKey, out var sparseCells)) {
+                        continue;
+                    }
+
+                    layerDoc.TerrainData.FieldMasks.TryGetValue(lbKey, out var sparseMasks);
+                    foreach (var (cellIdx, cellValue) in sparseCells) {
+                        byte layerMask = sparseMasks != null && sparseMasks.TryGetValue(cellIdx, out var mask)
+                            ? mask
+                            : TerrainFieldMask.All;
+                        byte unclaimed = (byte)(layerMask & ~resolved[cellIdx]);
+                        if (unclaimed == 0) {
+                            continue;
+                        }
+
+                        var entry = new TerrainEntry(cellValue);
+                        var current = currentEntries[cellIdx];
+                        currentEntries[cellIdx] = new TerrainEntry(
+                            road: (unclaimed & TerrainFieldMask.Road) != 0 ? entry.Road : current.Road,
+                            scenery: (unclaimed & TerrainFieldMask.Scenery) != 0 ? entry.Scenery : current.Scenery,
+                            type: (unclaimed & TerrainFieldMask.Type) != 0 ? entry.Type : current.Type,
+                            height: (unclaimed & TerrainFieldMask.Height) != 0 ? entry.Height : current.Height);
+                        resolved[cellIdx] |= unclaimed;
+                    }
+                }
+
+                var snapshot = new TerrainEntry[landblockSize];
+                Array.Copy(currentEntries, snapshot, landblockSize);
+                newTerrain[lbKey] = snapshot;
+                for (int i = 0; i < landblockSize; i++) {
+                    var entry = currentEntries[i];
+                    lb.Terrain[i] = new TerrainInfo {
+                        Road = entry.Road,
+                        Scenery = entry.Scenery,
+                        Type = (TerrainTextureType)entry.Type,
+                    };
+                    lb.Height[i] = entry.Height;
+                }
+
+                if (!writer.TrySaveLandblock(lb)) {
+                    throw new InvalidOperationException(LastLegacyFailure(writer, $"LandBlock 0x{lbId:X8} was not written."));
+                }
+            }
+
+            float[]? repoHeightTable = null;
+            if (DatReaderWriter.TryGet<Region>(0x13000000, out var repoRegion)) {
+                repoHeightTable = repoRegion.LandDefs.LandHeightTable;
+            }
+
+            if (repoHeightTable != null && oldTerrain.Count > 0 && newTerrain.Count > 0) {
+                onProgress?.Invoke("Repositioning DAT statics...");
+                writer.SuspendFailures();
+                try {
+                    int repoCount = 0;
+                    int skipped = 0;
+                    foreach (var lbKey in modifiedLandblocks) {
+                        if (!oldTerrain.TryGetValue(lbKey, out var oldEntries)
+                            || !newTerrain.TryGetValue(lbKey, out var newEntries)) {
+                            continue;
+                        }
+
+                        uint infoId = (uint)(lbKey << 16) | 0xFFFE;
+                        if (!writer.TryGet<LandBlockInfo>(infoId, out var lbi) || lbi.Objects == null || lbi.Objects.Count == 0) {
+                            continue;
+                        }
+
+                        uint landblockX = (uint)(lbKey >> 8) & 0xFF;
+                        uint landblockY = (uint)(lbKey & 0xFF);
+                        bool anyMoved = false;
+                        foreach (var stab in lbi.Objects) {
+                            float localX = stab.Frame.Origin.X;
+                            float localY = stab.Frame.Origin.Y;
+                            if (localX < 0 || localX > 192f || localY < 0 || localY > 192f) {
+                                continue;
+                            }
+
+                            float oldZ = TerrainHeightSampler.SampleHeightTriangle(
+                                oldEntries, repoHeightTable, localX, localY, landblockX, landblockY);
+                            float newZ = TerrainHeightSampler.SampleHeightTriangle(
+                                newEntries, repoHeightTable, localX, localY, landblockX, landblockY);
+                            float delta = newZ - oldZ;
+                            if (MathF.Abs(delta) < 0.01f) {
+                                continue;
+                            }
+
+                            stab.Frame.Origin = new Vector3(stab.Frame.Origin.X, stab.Frame.Origin.Y, stab.Frame.Origin.Z + delta);
+                            anyMoved = true;
+                        }
+
+                        if (!anyMoved) {
+                            continue;
+                        }
+
+                        if (writer.TrySave(lbi)) {
+                            repoCount++;
+                        }
+                        else {
+                            skipped++;
+                        }
+                    }
+
+                    onProgress?.Invoke(skipped == 0
+                        ? $"Repositioned statics in {repoCount} landblocks"
+                        : $"Repositioned statics in {repoCount} landblocks. {skipped} landblock info record(s) stayed in their original legacy layout.");
+                }
+                finally {
+                    writer.ResumeFailures();
+                }
+            }
+
+            onProgress?.Invoke("Writing static objects, dungeons, and portal edits...");
+            foreach (var (docId, doc) in DocumentManager.ActiveDocs) {
+                if (doc is LandblockDocument lbDoc) {
+                    if (!lbDoc.IsDirty && !lbDoc.LoadedFromProjection) {
+                        continue;
+                    }
+
+                    if (!lbDoc.SaveToDats(writer).GetAwaiter().GetResult()) {
+                        throw new InvalidOperationException(LastLegacyFailure(writer, $"Landblock {docId} was not written."));
+                    }
+                }
+                else if (doc is DungeonDocument dungeonDoc) {
+                    onProgress?.Invoke($"Exporting {docId} into cell.dat...");
+                    if (!dungeonDoc.SaveToDats(writer).GetAwaiter().GetResult()) {
+                        throw new InvalidOperationException(LastLegacyFailure(writer, $"Dungeon {docId} was not written into cell.dat."));
+                    }
+                }
+                else if (doc is PortalDatDocument portalDoc) {
+                    if (!portalDoc.SaveToDats(writer).GetAwaiter().GetResult()) {
+                        throw new InvalidOperationException(LastLegacyFailure(writer, "Portal edits were not written into portal.dat."));
+                    }
+
+                    foreach (var (fileId, bytes) in portalDoc.GetLegacyPortalFiles()) {
+                        if (!writer.TryWriteFileBytes(DatArchive.Portal, fileId, bytes)) {
+                            throw new InvalidOperationException(LastLegacyFailure(writer, $"Portal image 0x{fileId:X8} was not written."));
+                        }
+                    }
+                }
+                else if (doc is LayoutDatDocument layoutDoc) {
+                    layoutDoc.SaveToDats(writer);
+                }
+            }
+
+            onProgress?.Invoke("Writing custom textures...");
+            try {
+                OnExportCustomTextures?.Invoke(writer, null);
+            }
+            catch (Exception ex) {
+                Console.WriteLine($"[Export] Error writing custom textures: {ex.Message}");
+            }
+
+            if (writer.Failures.Count > 0) {
+                throw new InvalidOperationException(
+                    "Legacy export could not write every change into cell.dat and portal.dat."
+                    + System.Environment.NewLine
+                    + string.Join(System.Environment.NewLine, writer.Failures));
+            }
+
+            var dungeonsWithPlacements = new List<DungeonDocument>();
+            foreach (var (_, doc) in DocumentManager.ActiveDocs) {
+                if (doc is DungeonDocument dungeon && dungeon.InstancePlacements.Count > 0) {
+                    dungeonsWithPlacements.Add(dungeon);
+                }
+            }
+
+            if (dungeonsWithPlacements.Count > 0) {
+                OnExportDungeonInstances?.Invoke(exportDirectory, dungeonsWithPlacements);
+            }
+
+            if (OnExportReposition != null && oldTerrain.Count > 0 && newTerrain.Count > 0 && repoHeightTable != null) {
+                onProgress?.Invoke("Running instance reposition...");
+                var ctx = new RepositionContext {
+                    ModifiedLandblocks = modifiedLandblocks.ToArray(),
+                    OldTerrain = oldTerrain,
+                    NewTerrain = newTerrain,
+                    LandHeightTable = repoHeightTable,
+                    ExportDirectory = exportDirectory,
+                };
+                OnExportReposition(ctx).GetAwaiter().GetResult();
+            }
+
+            onProgress?.Invoke("Legacy cell.dat and portal.dat exported.");
+            return true;
+        }
+
+        static string LastLegacyFailure(LegacyDatSameSizeWriter writer, string fallback) =>
+            writer.Failures.Count == 0 ? fallback : writer.Failures[^1];
 
         private static string BuildDungeonFingerprint(DungeonDocument doc) {
             int cellCount = doc.Cells.Count;

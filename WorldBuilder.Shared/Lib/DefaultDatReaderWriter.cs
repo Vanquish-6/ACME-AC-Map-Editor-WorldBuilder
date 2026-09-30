@@ -77,13 +77,25 @@ namespace WorldBuilder.Shared.Lib {
         }
 
         public bool ContainsFile(DatArchive archive, uint id) {
-            lock (_lock) return _native.ContainsFile(archive, id);
+            lock (_lock) {
+                try {
+                    return _native.ContainsFile(archive, id);
+                }
+                catch (IOException ex) when (IsOptionalArchiveClosed(ex)) {
+                    return false;
+                }
+            }
         }
 
         public uint[] ListFileIds(DatArchive archive) {
             lock (_lock) {
                 if (!_idCache.TryGetValue(archive, out var ids)) {
-                    ids = _native.ListFileIds(archive);
+                    try {
+                        ids = _native.ListFileIds(archive);
+                    }
+                    catch (IOException ex) when (IsOptionalArchiveClosed(ex)) {
+                        ids = Array.Empty<uint>();
+                    }
                     _idCache[archive] = ids;
                 }
                 return ids;
@@ -91,8 +103,26 @@ namespace WorldBuilder.Shared.Lib {
         }
 
         public bool TryGetFileBytes(DatArchive archive, uint id, out byte[]? bytes) {
-            lock (_lock) return _native.TryGetFileBytes(archive, id, out bytes);
+            lock (_lock) return TryGetFileBytesUnlocked(archive, id, out bytes);
         }
+
+        bool TryGetFileBytesUnlocked(DatArchive archive, uint id, out byte[]? bytes) {
+            try {
+                return _native.TryGetFileBytes(archive, id, out bytes);
+            }
+            catch (IOException ex) when (IsOptionalArchiveClosed(ex)) {
+                bytes = null;
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Legacy portal/cell folders do not include client_local or client_highres.
+        /// The native library reports those missing archives as "kind N is not open".
+        /// </summary>
+        static bool IsOptionalArchiveClosed(IOException ex) =>
+            ex.Message.Contains("kind 2 is not open", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("kind 3 is not open", StringComparison.OrdinalIgnoreCase);
 
         public bool TryGetFileBytes(DatArchive archive, uint id, out byte[]? bytes, bool autoDecompress) {
             _ = autoDecompress;
@@ -189,7 +219,7 @@ namespace WorldBuilder.Shared.Lib {
                     : new[] { id };
                 foreach (uint tryId in idsToTry) {
                     foreach (var archive in archives) {
-                        if (_native.TryGetFileBytes(archive, tryId, out byte[]? found) && found != null) {
+                        if (TryGetFileBytesUnlocked(archive, tryId, out byte[]? found) && found != null) {
                             bytes = found;
                             break;
                         }
