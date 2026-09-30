@@ -7,11 +7,13 @@ using Silk.NET.OpenGL;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Numerics;
 using WorldBuilder.Lib;
 using WorldBuilder.Shared.Documents;
 using WorldBuilder.Shared.Lib;
+using WorldBuilder.Shared.Lib.MonsterBuilder;
 using PixelFormat = Silk.NET.OpenGL.PixelFormat;
 using DatPixelFormat = Acme.Dat.PixelFormat;
 
@@ -59,6 +61,26 @@ namespace WorldBuilder.Editors.Landscape {
         /// Given the SurfaceTexture DID, returns (rgbaData, width, height) or null.
         /// </summary>
         public Func<uint, (byte[] Data, int Width, int Height)?>? CustomTextureResolver { get; set; }
+
+        /// <summary>
+        /// Optional in-memory records that take precedence over the DAT for Surface,
+        /// SurfaceTexture, and RenderSurface lookups (e.g. textures created in the Monster
+        /// Builder but not yet published). Return null to fall through to the DAT.
+        /// </summary>
+        public Func<Type, uint, IDatRecord?>? RecordOverlay { get; set; }
+
+        private bool TryGetRecord<T>(uint id, out T record) where T : class, IDatRecord, new() {
+            if (RecordOverlay?.Invoke(typeof(T), id) is T overlay) {
+                record = overlay;
+                return true;
+            }
+            if (_dats.TryGet<T>(id, out var fromDat) && fromDat != null) {
+                record = fromDat;
+                return true;
+            }
+            record = null!;
+            return false;
+        }
 
         public StaticObjectManager(OpenGLRenderer renderer, IDatReaderWriter dats, TextureDiskCache? textureCache = null) {
             _renderer = renderer;
@@ -163,6 +185,16 @@ namespace WorldBuilder.Editors.Landscape {
             }
         }
 
+        /// <summary>
+        /// Drops a cached mesh even if the preview has incremented its use count.
+        /// Call on the GL thread. Used when Monster Builder replaces a part's geometry.
+        /// </summary>
+        public void DropRenderData(uint id) {
+            _usageCount.TryRemove(id, out _);
+            UnloadObject(id);
+            _failedIds.Remove(id);
+        }
+
         private void UnloadObject(uint key) {
             if (!_renderData.TryGetValue(key, out var data)) return;
 
@@ -250,25 +282,8 @@ namespace WorldBuilder.Editors.Landscape {
             }
         }
 
-        /// <summary>
-        /// Gets the correct placement frame for a Setup:
-        /// try Resting (0x65) first, then Default (0), then first available.
-        /// SetPlacementFrame(0x65) is the standard "resting in world" pose.
-        /// </summary>
-        private static AnimationFrame? GetDefaultPlacementFrame(Setup setup) {
-            if (setup.PlacementFrames.TryGetValue(Placement.Resting, out var resting))
-                return resting;
-            if (setup.PlacementFrames.TryGetValue(Placement.Default, out var def))
-                return def;
-            // Last resort: first available entry
-            foreach (var kvp in setup.PlacementFrames)
-                return kvp.Value;
-            return null;
-        }
-
         private StaticObjectRenderData CreateSetupRenderData(uint id, Setup setup) {
             var parts = new List<(uint GfxObjId, Matrix4x4 Transform)>();
-            var placementFrame = GetDefaultPlacementFrame(setup);
 
             for (int i = 0; i < setup.Parts.Count; i++) {
                 if (HiddenPartIndices?.Contains(i) == true) continue;
@@ -276,14 +291,7 @@ namespace WorldBuilder.Editors.Landscape {
                 // Apply GfxObj remapping for mix-and-match part swaps
                 uint gfxObjId = (GfxObjRemapping != null && GfxObjRemapping.TryGetValue(i, out var remapped))
                     ? remapped : (uint)partId;
-                var transform = Matrix4x4.Identity;
-
-                if (placementFrame?.Frames != null && i < placementFrame.Frames.Count) {
-                    transform = Matrix4x4.CreateFromQuaternion(placementFrame.Frames[i].Orientation)
-                        * Matrix4x4.CreateTranslation(placementFrame.Frames[i].Origin);
-                }
-
-                parts.Add((gfxObjId, transform));
+                parts.Add((gfxObjId, SetupAssembly.LocalToSetup(setup, i)));
             }
 
             var data = new StaticObjectRenderData {
@@ -308,27 +316,19 @@ namespace WorldBuilder.Editors.Landscape {
                 if (isSetup) {
                     if (!TryGetSetup(id, out var setup)) return null;
                     var parts = new List<(uint GfxObjId, Matrix4x4 Transform)>();
-                    var placementFrame = GetDefaultPlacementFrame(setup);
                     for (int i = 0; i < setup.Parts.Count; i++) {
                         var partId = setup.Parts[i];
-                        var transform = Matrix4x4.Identity;
-                        if (placementFrame?.Frames != null && i < placementFrame.Frames.Count) {
-                            transform = Matrix4x4.CreateFromQuaternion(placementFrame.Frames[i].Orientation) *
-                                        Matrix4x4.CreateTranslation(placementFrame.Frames[i].Origin);
-                        }
-                        parts.Add((partId, transform));
+                        parts.Add((partId, SetupAssembly.LocalToSetup(setup, i)));
                     }
                     var min = new Vector3(float.MaxValue);
                     var max = new Vector3(float.MinValue);
                     bool hasBounds = false;
                     foreach (var (partId, transform) in parts) {
                         if (TryGetGfxObj(partId, out var partGfx)) {
-                            var (partMin, partMax) = ComputeBounds(partGfx, Vector3.One);
-                            // Approximate transformed AABB (same as original; for exact, transform 8 corners)
-                            var transMin = Vector3.Transform(partMin, transform);
-                            var transMax = Vector3.Transform(partMax, transform);
-                            min = Vector3.Min(min, transMin);
-                            max = Vector3.Max(max, transMax);
+                            var transformed = ComputeTransformedBounds(partGfx, transform);
+                            if (transformed is not { } bounds) continue;
+                            min = Vector3.Min(min, bounds.Min);
+                            max = Vector3.Max(max, bounds.Max);
                             hasBounds = true;
                         }
                     }
@@ -362,15 +362,15 @@ namespace WorldBuilder.Editors.Landscape {
                 if (poly.VertexIds.Count < 3) continue;
 
                 // NoPos = "no positive surface" — portal/doorway openings that should not be rendered.
-                if (poly.Stippling == StipplingType.NoPos) continue;
+                if (poly.Stippling.HasFlag(StipplingType.NoPos)) continue;
 
                 int surfaceIdx = poly.PosSurface;
                 bool useNegSurface = false;
 
-                if (surfaceIdx >= gfxObj.Surfaces.Count) continue;
+                if (surfaceIdx < 0 || surfaceIdx >= gfxObj.Surfaces.Count) continue;
 
                 var surfaceId = gfxObj.Surfaces[surfaceIdx];
-                if (!_dats.TryGet<Surface>(surfaceId, out var surface)) continue;
+                if (!TryGetRecord<Surface>(surfaceId, out var surface)) continue;
 
                 bool isSolid = surface.Type.HasFlag(SurfaceType.Base1Solid);
                 var texResult = LoadTextureData(surfaceId, surface, isSolid, poly.Stippling);
@@ -543,15 +543,9 @@ namespace WorldBuilder.Editors.Landscape {
                 if (isSetup) {
                     if (!TryGetSetup(id, out var setup)) return null;
                     var parts = new List<(uint GfxObjId, Matrix4x4 Transform)>();
-                    var placementFrame = GetDefaultPlacementFrame(setup);
                     for (int i = 0; i < setup.Parts.Count; i++) {
                         var partId = setup.Parts[i];
-                        var transform = Matrix4x4.Identity;
-                        if (placementFrame?.Frames != null && i < placementFrame.Frames.Count) {
-                            transform = Matrix4x4.CreateFromQuaternion(placementFrame.Frames[i].Orientation)
-                                * Matrix4x4.CreateTranslation(placementFrame.Frames[i].Origin);
-                        }
-                        parts.Add((partId, transform));
+                        parts.Add((partId, SetupAssembly.LocalToSetup(setup, i)));
                     }
                     return new PreparedModelData { Id = id, IsSetup = true, SetupParts = parts };
                 }
@@ -583,15 +577,15 @@ namespace WorldBuilder.Editors.Landscape {
                 if (poly.VertexIds.Count < 3) continue;
 
                 // NoPos = "no positive surface" — portal/doorway openings that should not be rendered.
-                if (poly.Stippling == StipplingType.NoPos) continue;
+                if (poly.Stippling.HasFlag(StipplingType.NoPos)) continue;
 
                 int surfaceIdx = poly.PosSurface;
                 bool useNegSurface = false;
 
-                if (surfaceIdx >= gfxObj.Surfaces.Count) continue;
+                if (surfaceIdx < 0 || surfaceIdx >= gfxObj.Surfaces.Count) continue;
 
                 var surfaceId = gfxObj.Surfaces[surfaceIdx];
-                if (!_dats.TryGet<Surface>(surfaceId, out var surface)) continue;
+                if (!TryGetRecord<Surface>(surfaceId, out var surface)) continue;
 
                 bool isSolid = surface.Type.HasFlag(SurfaceType.Base1Solid);
                 var texResult = LoadTextureData(surfaceId, surface, isSolid, poly.Stippling);
@@ -780,7 +774,7 @@ namespace WorldBuilder.Editors.Landscape {
 
             var surfTexId = (TextureRemapping != null && TextureRemapping.TryGetValue((uint)surface.OrigTextureId, out var remapped))
                 ? remapped : (uint)surface.OrigTextureId;
-            if (!_dats.TryGet<SurfaceTexture>(surfTexId, out var surfaceTexture) ||
+            if (!TryGetRecord<SurfaceTexture>(surfTexId, out var surfaceTexture) ||
                 surfaceTexture.Textures?.Any() != true) {
                 // Fallback: check for a custom imported texture not yet in the DAT
                 if (CustomTextureResolver?.Invoke(surfTexId) is { } custom) {
@@ -791,7 +785,7 @@ namespace WorldBuilder.Editors.Landscape {
             }
 
             var renderSurfaceId = surfaceTexture.Textures.Last();
-            if (!_dats.TryGet<RenderSurface>(renderSurfaceId, out var renderSurface)) return null;
+            if (!TryGetRecord<RenderSurface>(renderSurfaceId, out var renderSurface)) return null;
 
             int w = renderSurface.Width, h = renderSurface.Height;
             paletteId = surface.OrigPaletteId != 0
@@ -820,6 +814,21 @@ namespace WorldBuilder.Editors.Landscape {
                     uploadPixelFormat = PixelFormat.Rgb;
                     textureFormat = TextureFormat.RGB8;
                     textureData = renderSurface.SourceData;
+                    break;
+                case DatPixelFormat.PFID_A8:
+                    if (renderSurface.SourceData.Length < w * h) {
+                        throw new InvalidDataException(
+                            $"A8 RenderSurface 0x{renderSurface.Id:X8} has incomplete source data.");
+                    }
+
+                    textureData = new byte[w * h * 4];
+                    for (int i = 0; i < w * h; i++) {
+                        textureData[i * 4] = 0xFF;
+                        textureData[i * 4 + 1] = 0xFF;
+                        textureData[i * 4 + 2] = 0xFF;
+                        textureData[i * 4 + 3] = renderSurface.SourceData[i];
+                    }
+                    uploadPixelFormat = PixelFormat.Rgba;
                     break;
                 case DatPixelFormat.PFID_INDEX16: {
                     // Check disk cache first
@@ -888,6 +897,35 @@ namespace WorldBuilder.Editors.Landscape {
                 min = Vector3.Min(min, p);
                 max = Vector3.Max(max, p);
             }
+            return (min, max);
+        }
+
+        private (Vector3 Min, Vector3 Max)? ComputeTransformedBounds(
+            GfxObj gfxObj,
+            Matrix4x4 transform) {
+            if (gfxObj.VertexArray?.Vertices is not { Count: > 0 }) {
+                return null;
+            }
+
+            var local = ComputeBounds(gfxObj, Vector3.One);
+            var corners = new[] {
+                new Vector3(local.Min.X, local.Min.Y, local.Min.Z),
+                new Vector3(local.Min.X, local.Min.Y, local.Max.Z),
+                new Vector3(local.Min.X, local.Max.Y, local.Min.Z),
+                new Vector3(local.Min.X, local.Max.Y, local.Max.Z),
+                new Vector3(local.Max.X, local.Min.Y, local.Min.Z),
+                new Vector3(local.Max.X, local.Min.Y, local.Max.Z),
+                new Vector3(local.Max.X, local.Max.Y, local.Min.Z),
+                new Vector3(local.Max.X, local.Max.Y, local.Max.Z),
+            };
+            var min = new Vector3(float.MaxValue);
+            var max = new Vector3(float.MinValue);
+            foreach (var corner in corners) {
+                var transformed = Vector3.Transform(corner, transform);
+                min = Vector3.Min(min, transformed);
+                max = Vector3.Max(max, transformed);
+            }
+
             return (min, max);
         }
 

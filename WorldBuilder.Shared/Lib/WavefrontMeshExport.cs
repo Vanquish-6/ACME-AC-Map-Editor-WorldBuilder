@@ -39,6 +39,35 @@ namespace WorldBuilder.Shared.Lib {
         }
 
         /// <summary>
+        /// Writes an in-memory Setup. Each part is an OBJ group in the resting placement pose.
+        /// </summary>
+        public static void WriteSetupParts(Setup setup, Func<uint, GfxObj?> getGfx, TextWriter w) {
+            w.WriteLine("# AC Setup → Wavefront OBJ (WorldBuilder)");
+            w.WriteLine($"# Setup 0x{setup.Id:X8}");
+            var placementFrame = GetDefaultPlacementFrame(setup);
+            int nextObjIndex = 1;
+            for (int pi = 0; pi < setup.Parts.Count; pi++) {
+                uint partId = setup.Parts[pi];
+                var gfx = getGfx(partId);
+                if (gfx == null) {
+                    w.WriteLine($"# skip part {pi}: GfxObj 0x{partId:X8} missing");
+                    continue;
+                }
+
+                var transform = Matrix4x4.Identity;
+                if (placementFrame?.Frames != null && pi < placementFrame.Frames.Count) {
+                    var fr = placementFrame.Frames[pi];
+                    transform = Matrix4x4.CreateFromQuaternion(fr.Orientation)
+                        * Matrix4x4.CreateTranslation(fr.Origin);
+                }
+
+                w.WriteLine($"g setup_{setup.Id:X8}_part{pi}_0x{partId:X8}");
+                TriangulateFaces(gfx, transform, out var positions, out var normals, out var uvs, out var surfaceRanges);
+                nextObjIndex = WriteVerticesAndFaces(w, positions, normals, uvs, nextObjIndex, surfaceRanges);
+            }
+        }
+
+        /// <summary>
         /// Each Setup part becomes an OBJ <c>g</c> group; vertices use the default placement frame (Resting → Default → first).
         /// </summary>
         public static bool TryWriteSetup(IDatReaderWriter dats, uint setupId, TextWriter w, out string? error) {

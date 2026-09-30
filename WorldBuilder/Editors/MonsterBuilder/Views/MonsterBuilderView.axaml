@@ -1,0 +1,265 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:WorldBuilder.Editors.MonsterBuilder"
+             xmlns:preview="using:WorldBuilder.Editors.MonsterBuilder.Views"
+             x:Class="WorldBuilder.Editors.MonsterBuilder.Views.MonsterBuilderView"
+             x:DataType="vm:MonsterBuilderViewModel"
+             x:Name="Root">
+    <UserControl.Styles>
+        <Style Selector="Button.tool">
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Background" Value="#1a1530" />
+            <Setter Property="Foreground" Value="#d8d0ea" />
+        </Style>
+        <Style Selector="TextBlock.hint">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="#8d7eab" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+    </UserControl.Styles>
+    <DockPanel Background="#120c22">
+        <Border DockPanel.Dock="Top" Background="#100a1c" Padding="8,6" BorderBrush="#2a1d42" BorderThickness="0,0,0,1">
+            <StackPanel Orientation="Horizontal" Spacing="6">
+                <Button Classes="tool" Content="Undo" Command="{Binding UndoCommand}" />
+                <Button Classes="tool" Content="Redo" Command="{Binding RedoCommand}" />
+                <Button Classes="tool" Content="Save Project" Command="{Binding SaveProjectCommand}" />
+                <Button Classes="tool" Content="Review Publish" Command="{Binding ReviewPublishCommand}" />
+                <Button Classes="tool" Content="Confirm Publish" Command="{Binding ConfirmPublishCommand}" IsEnabled="{Binding PublishReady}" />
+                <TextBlock Text="{Binding StatusText}" VerticalAlignment="Center" Foreground="#c8b8e0" FontSize="12" TextWrapping="Wrap" MaxWidth="720" />
+            </StackPanel>
+        </Border>
+        <Grid ColumnDefinitions="280,6,*,6,340">
+            <DockPanel Grid.Column="0" Margin="8">
+                <StackPanel DockPanel.Dock="Top" Spacing="6">
+                    <TextBlock Text="Source Setup" Foreground="#c8b8e0" />
+                    <TextBox Text="{Binding SetupIdText}" Watermark="0x02000034" />
+                    <WrapPanel Orientation="Horizontal">
+                        <Button Classes="tool" Content="Load" Command="{Binding LoadSetupCommand}" Margin="0,0,4,4" />
+                        <Button Classes="tool" Content="Clone Monster" Command="{Binding CloneMonsterCommand}" Margin="0,0,4,4" />
+                        <Button Classes="tool" Content="Import Project" Command="{Binding ImportProjectCommand}" Margin="0,0,4,4" />
+                        <Button Classes="tool" Content="Export Project" Command="{Binding ExportProjectCommand}" Margin="0,0,4,4" />
+                    </WrapPanel>
+                    <TextBlock Text="{Binding MonsterTitle}" FontWeight="SemiBold" Foreground="#f0e8ff" TextWrapping="Wrap" />
+                    <TextBlock Classes="hint" Text="1. Find and load a Setup. 2. Select a part. 3. On the right, import an OBJ, mix a donor part, or paint a surface. Clone happens automatically the first time you change a mesh." />
+                    <TextBox Text="{Binding SetupFilter}" Watermark="Filter Setup IDs" />
+                    <Button Classes="tool" Content="Find setups" Command="{Binding FindSetupsCommand}" HorizontalAlignment="Left" />
+                    <ListBox ItemsSource="{Binding SetupMatches}" SelectedItem="{Binding SelectedSetupMatch}" MaxHeight="120" Background="Transparent" />
+                </StackPanel>
+                <ListBox ItemsSource="{Binding Parts}" SelectedItem="{Binding SelectedPart}" Background="Transparent" Margin="0,8,0,0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:MonsterPartRow">
+                            <StackPanel Margin="{Binding Depth, Converter={x:Static preview:DepthMarginConverter.Instance}}" Spacing="1">
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Right" Classes="tool" Content="Hide" Command="{Binding ToggleCommand}" />
+                                    <TextBlock Text="{Binding Title}" Foreground="#f4eeff" />
+                                </DockPanel>
+                                <TextBlock Text="{Binding GfxLabel}" Foreground="#9dcf9a" FontFamily="Consolas" FontSize="11" />
+                                <TextBlock Foreground="#8d7eab" FontSize="11">
+                                    <Run Text="{Binding ParentLabel}" />
+                                    <Run Text="  " />
+                                    <Run Text="{Binding RoleLabel}" />
+                                </TextBlock>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+            <GridSplitter Grid.Column="1" Width="6" Background="#2a1d42" />
+            <DockPanel Grid.Column="2" Margin="4">
+                <WrapPanel DockPanel.Dock="Top" Orientation="Horizontal">
+                    <CheckBox Content="Solid" IsChecked="{Binding ShowSolid}" Margin="4" />
+                    <CheckBox Content="Wireframe" IsChecked="{Binding ShowWireframe}" Margin="4" />
+                    <CheckBox Content="Normals" IsChecked="{Binding ShowNormals}" Margin="4" />
+                    <CheckBox Content="Bounds" IsChecked="{Binding ShowBounds}" Margin="4" />
+                    <CheckBox Content="Origins" IsChecked="{Binding ShowOrigins}" Margin="4" />
+                    <CheckBox Content="Hierarchy" IsChecked="{Binding ShowHierarchy}" Margin="4" />
+                    <Button Classes="tool" Content="Reset" Command="{Binding ResetCameraCommand}" Margin="4" />
+                    <Button Classes="tool" Content="Front" Command="{Binding ViewFrontCommand}" Margin="2" />
+                    <Button Classes="tool" Content="Back" Command="{Binding ViewBackCommand}" Margin="2" />
+                    <Button Classes="tool" Content="Left" Command="{Binding ViewLeftCommand}" Margin="2" />
+                    <Button Classes="tool" Content="Right" Command="{Binding ViewRightCommand}" Margin="2" />
+                    <Button Classes="tool" Content="Top" Command="{Binding ViewTopCommand}" Margin="2" />
+                </WrapPanel>
+                <TextBlock DockPanel.Dock="Bottom" Classes="hint" Margin="6"
+                           Text="Left drag orbits, right drag pans, wheel zooms. The pose is the Setup resting placement. Animation playback is left for a later pass because ACME does not evaluate MotionTables. Axes sit on the attachment origin: red X, green Y, blue Z." />
+                <preview:MonsterBuilderPreviewView Margin="0,4" />
+            </DockPanel>
+            <GridSplitter Grid.Column="3" Width="6" Background="#2a1d42" />
+            <ScrollViewer Grid.Column="4">
+                <StackPanel Margin="8" Spacing="8">
+                    <TextBlock Text="Selected part" Foreground="#f0e8ff" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding PartSummary}" Foreground="#d8d0ea" FontSize="12" />
+                    <TextBlock Classes="hint" Text="Label (editor only)" />
+                    <TextBox Text="{Binding PartLabel}" Watermark="Optional name" />
+                    <TextBlock Classes="hint" Text="Role" />
+                    <ComboBox ItemsSource="{Binding Roles}" SelectedItem="{Binding SelectedRole}" PlaceholderText="Unassigned" />
+                    <TextBlock Classes="hint" Text="Mirror partner part index" />
+                    <TextBox Text="{Binding MirrorPartnerText}" Watermark="1" />
+                    <Button Classes="tool" Content="Mirror Selected Part To Partner" Command="{Binding MirrorToPartnerCommand}" />
+
+                    <TextBlock Text="Mix a part" Foreground="#f0e8ff" FontWeight="SemiBold" />
+                    <TextBlock Classes="hint" Text="Load another creature's Setup. Pick one of its parts, then put that mesh on the part selected on the left. This monster's pose stays." />
+                    <TextBox Text="{Binding DonorSetupText}" Watermark="Donor Setup ID" />
+                    <Button Classes="tool" Content="Load donor" Command="{Binding LoadDonorCommand}" HorizontalAlignment="Left" />
+                    <ListBox ItemsSource="{Binding DonorParts}" SelectedItem="{Binding SelectedDonorPart}" MaxHeight="140" Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:DonorPartRow">
+                                <StackPanel Margin="2">
+                                    <TextBlock Text="{Binding Title}" Foreground="#f4eeff" />
+                                    <TextBlock Text="{Binding GfxLabel}" Foreground="#9dcf9a" FontFamily="Consolas" FontSize="11" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <Button Classes="tool" Content="Use donor mesh on selected part" Command="{Binding UseDonorMeshCommand}" HorizontalAlignment="Left" />
+
+                    <TextBlock Text="Import a model (OBJ)" Foreground="#f0e8ff" FontWeight="SemiBold" />
+                    <TextBlock Classes="hint" Text="Whole monster: load the creature whose skeleton and animations you want, then pick an OBJ of the new body. It is scaled to the creature, and every triangle is split onto the part whose old mesh is nearest, so it animates. Name groups head, torso, hand_l, part3, or a part label to place them yourself." />
+                    <TextBlock Classes="hint" Text="Up axis" />
+                    <ComboBox ItemsSource="{Binding ObjUpAxisNames}" SelectedItem="{Binding ObjUpAxisName}" HorizontalAlignment="Stretch" />
+                    <CheckBox Content="Fit to the creature's height and stand it on the floor" IsChecked="{Binding ObjFitToCreature}" />
+                    <CheckBox Content="Use group names to pick parts" IsChecked="{Binding ObjUseGroupNames}" />
+                    <CheckBox Content="Read the .mtl and import its textures (PNG next to the OBJ)" IsChecked="{Binding ObjUseMaterials}" />
+                    <CheckBox Content="Flip texture V for Blender/Maya UVs" IsChecked="{Binding ObjFlipV}" />
+                    <CheckBox Content="Empty parts that receive nothing" IsChecked="{Binding ObjClearUnmatched}" />
+                    <CheckBox Content="Weld matching vertices" IsChecked="{Binding DeduplicateObj}" />
+                    <TextBlock Classes="hint" Text="Turn about Z (degrees). Use 180 if it faces backwards." />
+                    <TextBox Text="{Binding ObjYawDegrees}" Watermark="0" />
+                    <Button Classes="tool" Content="Import OBJ as whole monster" Command="{Binding ImportMonsterObjCommand}" HorizontalAlignment="Left" />
+                    <TextBox Text="{Binding ObjImportSummary}" IsReadOnly="True" AcceptsReturn="True" MaxHeight="120" TextWrapping="Wrap" IsVisible="{Binding ObjImportSummary, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+                    <TextBlock Classes="hint" Text="One part: select a part on the left, then replace only that mesh. Keep the model's origin at the joint, or turn on fit to drop it into the old part's box." />
+                    <CheckBox Content="Fit to the selected part's old size" IsChecked="{Binding ObjFitToPart}" />
+                    <CheckBox Content="OBJ is a whole-creature ACME export (assembled space)" IsChecked="{Binding ObjIsAssembled}" />
+                    <WrapPanel Orientation="Horizontal">
+                        <Button Classes="tool" Content="Replace selected part from OBJ" Command="{Binding ReplaceFromObjCommand}" Margin="0,0,4,4" />
+                        <Button Classes="tool" Content="Export part OBJ" Command="{Binding ExportPartObjCommand}" Margin="0,0,4,4" />
+                        <Button Classes="tool" Content="Export assembled OBJ" Command="{Binding ExportAssembledObjCommand}" Margin="0,0,4,4" />
+                    </WrapPanel>
+
+                    <TextBlock Text="Retexture" Foreground="#f0e8ff" FontWeight="SemiBold" />
+                    <TextBlock Classes="hint" Text="Bring in your own PNG (one unwrapped image that the model's UVs map onto). It becomes a new AC surface, shows in the preview at once, and is written with the monster on publish." />
+                    <WrapPanel Orientation="Horizontal">
+                        <Button Classes="tool" Content="Import PNG for whole monster" Command="{Binding ImportTextureForMonsterCommand}" Margin="0,0,4,4" />
+                        <Button Classes="tool" Content="Import PNG for selected part" Command="{Binding ImportTextureForPartCommand}" Margin="0,0,4,4" />
+                    </WrapPanel>
+                    <TextBlock Classes="hint" Text="Or pick a surface already on this monster. Paint part covers the selected part. Replace swaps only the surface you picked on this part." />
+                    <TextBlock Classes="hint" Text="On this part" />
+                    <ListBox ItemsSource="{Binding PartSurfaces}" SelectedItem="{Binding SelectedPartSurface}" MaxHeight="110" Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SurfaceRow">
+                                <StackPanel Margin="2">
+                                    <TextBlock Text="{Binding Label}" Foreground="#9dcf9a" FontFamily="Consolas" />
+                                    <TextBlock Text="{Binding Detail}" Foreground="#8d7eab" FontSize="11" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <TextBlock Classes="hint" Text="Paint with" />
+                    <ListBox ItemsSource="{Binding CreatureSurfaces}" SelectedItem="{Binding SelectedPaintSurface}" MaxHeight="140" Background="Transparent">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SurfaceRow">
+                                <StackPanel Margin="2">
+                                    <TextBlock Text="{Binding Label}" Foreground="#9dcf9a" FontFamily="Consolas" />
+                                    <TextBlock Text="{Binding Detail}" Foreground="#8d7eab" FontSize="11" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <WrapPanel Orientation="Horizontal">
+                        <Button Classes="tool" Content="Paint part" Command="{Binding PaintPartCommand}" Margin="0,0,4,4" />
+                        <Button Classes="tool" Content="Replace selected surface" Command="{Binding ReplacePartSurfaceCommand}" Margin="0,0,4,4" />
+                    </WrapPanel>
+
+                    <Expander Header="Shape, horns, proportions" IsExpanded="False">
+                    <StackPanel Spacing="8">
+                    <TextBlock Text="Transform Geometry" Foreground="#f0e8ff" />
+                    <TextBlock Classes="hint" Text="Applied in GfxObj local space. This does not move the Setup attachment." />
+                    <TextBlock Classes="hint" Text="Position X, Y, Z" />
+                    <TextBox Text="{Binding GeometryPosition}" />
+                    <TextBlock Classes="hint" Text="Rotation degrees X, Y, Z" />
+                    <TextBox Text="{Binding GeometryRotation}" />
+                    <TextBlock Classes="hint" Text="Scale X, Y, Z" />
+                    <TextBox Text="{Binding GeometryScale}" />
+                    <TextBlock Classes="hint" Text="Uniform scale" />
+                    <TextBox Text="{Binding UniformScale}" />
+                    <Button Classes="tool" Content="Apply Geometry" Command="{Binding ApplyGeometryCommand}" />
+
+                    <TextBlock Text="Transform Attachment" Foreground="#f0e8ff" />
+                    <TextBlock Classes="hint" Text="Writes the resting placement frame and Setup default scale. Vertices stay in local space." />
+                    <TextBox Text="{Binding AttachmentPosition}" />
+                    <TextBox Text="{Binding AttachmentRotation}" />
+                    <TextBox Text="{Binding AttachmentScale}" />
+                    <Button Classes="tool" Content="Apply Attachment" Command="{Binding ApplyAttachmentCommand}" />
+
+                    <TextBlock Classes="hint" Text="Deform factor" />
+                    <TextBox Text="{Binding DeformFactor}" />
+                    <WrapPanel Orientation="Horizontal">
+                        <Button Classes="tool" Content="Widen" Command="{Binding WidenCommand}" Margin="0,0,4,4" />
+                        <Button Classes="tool" Content="Narrow" Command="{Binding NarrowCommand}" Margin="0,0,4,4" />
+                        <Button Classes="tool" Content="Lengthen" Command="{Binding LengthenCommand}" Margin="0,0,4,4" />
+                        <Button Classes="tool" Content="Shorten" Command="{Binding ShortenCommand}" Margin="0,0,4,4" />
+                        <Button Classes="tool" Content="Taper" Command="{Binding TaperCommand}" Margin="0,0,4,4" />
+                        <Button Classes="tool" Content="Bulge" Command="{Binding BulgeCommand}" Margin="0,0,4,4" />
+                        <Button Classes="tool" Content="Flatten" Command="{Binding FlattenCommand}" Margin="0,0,4,4" />
+                        <Button Classes="tool" Content="Mirror X" Command="{Binding MirrorXCommand}" Margin="0,0,4,4" />
+                        <Button Classes="tool" Content="Mirror Y" Command="{Binding MirrorYCommand}" Margin="0,0,4,4" />
+                        <Button Classes="tool" Content="Mirror Z" Command="{Binding MirrorZCommand}" Margin="0,0,4,4" />
+                        <Button Classes="tool" Content="Deduplicate" Command="{Binding DeduplicateCommand}" Margin="0,0,4,4" />
+                    </WrapPanel>
+
+                    <TextBlock Text="Surface" Foreground="#f0e8ff" />
+                    <TextBox Text="{Binding ReplacementSurface}" Watermark="0x08000001" />
+                    <TextBox Text="{Binding FaceList}" Watermark="Faces: 0,2,5-9" />
+                    <WrapPanel Orientation="Horizontal">
+                        <Button Classes="tool" Content="Apply To Part" Command="{Binding ApplySurfaceToPartCommand}" Margin="0,0,4,4" />
+                        <Button Classes="tool" Content="Apply To Faces" Command="{Binding ApplySurfaceToFacesCommand}" Margin="0,0,4,4" />
+                    </WrapPanel>
+
+                    <TextBlock Text="Primitive" Foreground="#f0e8ff" />
+                    <ComboBox ItemsSource="{Binding PrimitiveKinds}" SelectedItem="{Binding PrimitiveKindName}" />
+                    <TextBlock Classes="hint" Text="Segments, radius, length" />
+                    <TextBox Text="{Binding PrimitiveSegments}" />
+                    <TextBox Text="{Binding PrimitiveRadius}" />
+                    <TextBox Text="{Binding PrimitiveLength}" />
+                    <TextBlock Classes="hint" Text="Position, rotation degrees, scale" />
+                    <TextBox Text="{Binding PrimitivePosition}" />
+                    <TextBox Text="{Binding PrimitiveRotation}" />
+                    <TextBox Text="{Binding PrimitiveScale}" />
+                    <Button Classes="tool" Content="Add Primitive" Command="{Binding AddPrimitiveCommand}" />
+
+                    <TextBlock Text="Proportions" Foreground="#f0e8ff" />
+                    <TextBlock Classes="hint" Text="1 leaves a control unchanged. Named controls run only on parts with that role." />
+                    <TextBlock Classes="hint" Text="Overall height" />
+                    <TextBox Text="{Binding OverallHeight}" />
+                    <TextBlock Classes="hint" Text="Overall width" />
+                    <TextBox Text="{Binding OverallWidth}" />
+                    <TextBlock Classes="hint" Text="Head scale" IsVisible="{Binding HasHead}" />
+                    <TextBox Text="{Binding HeadScale}" IsVisible="{Binding HasHead}" />
+                    <TextBlock Classes="hint" Text="Torso width" IsVisible="{Binding HasTorso}" />
+                    <TextBox Text="{Binding TorsoWidth}" IsVisible="{Binding HasTorso}" />
+                    <TextBlock Classes="hint" Text="Torso height" IsVisible="{Binding HasTorso}" />
+                    <TextBox Text="{Binding TorsoHeight}" IsVisible="{Binding HasTorso}" />
+                    <TextBlock Classes="hint" Text="Arm length" IsVisible="{Binding HasArms}" />
+                    <TextBox Text="{Binding ArmLength}" IsVisible="{Binding HasArms}" />
+                    <TextBlock Classes="hint" Text="Arm thickness" IsVisible="{Binding HasArms}" />
+                    <TextBox Text="{Binding ArmThickness}" IsVisible="{Binding HasArms}" />
+                    <TextBlock Classes="hint" Text="Hand size" IsVisible="{Binding HasHands}" />
+                    <TextBox Text="{Binding HandSize}" IsVisible="{Binding HasHands}" />
+                    <TextBlock Classes="hint" Text="Leg length" IsVisible="{Binding HasLegs}" />
+                    <TextBox Text="{Binding LegLength}" IsVisible="{Binding HasLegs}" />
+                    <TextBlock Classes="hint" Text="Leg thickness" IsVisible="{Binding HasLegs}" />
+                    <TextBox Text="{Binding LegThickness}" IsVisible="{Binding HasLegs}" />
+                    <TextBlock Classes="hint" Text="Foot size" IsVisible="{Binding HasFeet}" />
+                    <TextBox Text="{Binding FootSize}" IsVisible="{Binding HasFeet}" />
+                    <Button Classes="tool" Content="Apply Proportions" Command="{Binding ApplyProportionsCommand}" />
+                    </StackPanel>
+                    </Expander>
+
+                    <TextBlock Text="Publish" Foreground="#f0e8ff" />
+                    <TextBox Text="{Binding PublishSummary}" IsReadOnly="True" AcceptsReturn="True" Height="160" TextWrapping="Wrap" />
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </DockPanel>
+</UserControl>

@@ -27,6 +27,8 @@
     xmlns:weenieEditors="clr-namespace:WorldBuilder.Editors.Weenie.Views;assembly=WorldBuilder"
     xmlns:monsterVm="clr-namespace:WorldBuilder.Editors.Monster;assembly=WorldBuilder"
     xmlns:monsterEditors="clr-namespace:WorldBuilder.Editors.Monster.Views;assembly=WorldBuilder"
+    xmlns:monsterBuilderVm="clr-namespace:WorldBuilder.Editors.MonsterBuilder;assembly=WorldBuilder"
+    xmlns:monsterBuilderEditors="clr-namespace:WorldBuilder.Editors.MonsterBuilder.Views;assembly=WorldBuilder"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="clr-namespace:WorldBuilder.ViewModels"
     xmlns:docking="clr-namespace:WorldBuilder.Lib.Docking;assembly=WorldBuilder"
@@ -294,6 +296,9 @@
                 </DataTemplate>
                 <DataTemplate DataType="{x:Type monsterVm:MonsterEditorViewModel}">
                     <monsterEditors:MonsterEditorView />
+                </DataTemplate>
+                <DataTemplate DataType="{x:Type monsterBuilderVm:MonsterBuilderViewModel}">
+                    <monsterBuilderEditors:MonsterBuilderView />
                 </DataTemplate>
                 <DataTemplate DataType="{x:Type vm:ReadOnlyInfoViewModel}">
                     <sharedViews:ReadOnlyInfoView />

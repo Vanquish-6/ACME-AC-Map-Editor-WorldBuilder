@@ -16,6 +16,7 @@ using WorldBuilder.Editors.Spell;
 using WorldBuilder.Editors.SpellSet;
 using WorldBuilder.Editors.Vital;
 using WorldBuilder.Editors.Monster;
+using WorldBuilder.Editors.MonsterBuilder;
 using WorldBuilder.Editors.Weenie;
 using WorldBuilder.Lib.Factories;
 using WorldBuilder.Lib.Settings;
@@ -114,6 +115,7 @@ namespace WorldBuilder.Lib.Extensions {
             collection.AddSingleton<ObjectDebugEditorViewModel>();
             collection.AddSingleton<WeenieEditorViewModel>();
             collection.AddSingleton<MonsterEditorViewModel>();
+            collection.AddSingleton<MonsterBuilderViewModel>();
             collection.AddTransient<HistorySnapshotPanelViewModel>();
         }
     }

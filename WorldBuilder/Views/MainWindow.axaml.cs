@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 #if DEBUG
 using Avalonia;
+using Avalonia.Diagnostics;
 #endif
 
 namespace WorldBuilder.Views;

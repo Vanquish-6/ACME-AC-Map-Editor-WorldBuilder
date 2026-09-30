@@ -27,6 +27,7 @@ using WorldBuilder.Editors.SpellSet;
 using WorldBuilder.Editors.Vital;
 using WorldBuilder.Editors.Layout;
 using WorldBuilder.Editors.Monster;
+using WorldBuilder.Editors.MonsterBuilder;
 using WorldBuilder.Editors.Weenie;
 using WorldBuilder.Editors.ObjectDebug;
 using WorldBuilder.Lib;
@@ -87,6 +88,7 @@ public partial class MainViewModel : ViewModelBase {
         CharGenEditorViewModel => "Character Creation",
         WeenieEditorViewModel => "Weenies",
         MonsterEditorViewModel => "Monsters",
+        MonsterBuilderViewModel => "Monster Builder",
         LayoutEditorViewModel => "UI Layout",
         ObjectDebugEditorViewModel => "Object Inspector",
         _ => "ACME"
@@ -103,6 +105,7 @@ public partial class MainViewModel : ViewModelBase {
         CharGenEditorViewModel => "Heritage groups and starting towns for new characters.",
         WeenieEditorViewModel => "Weenies are game objects — items, NPCs, portals. Search, then edit properties.",
         MonsterEditorViewModel => "Create or override creatures. Search a weenie, then tweak appearance and save to the DB.",
+        MonsterBuilderViewModel => "Clone a Setup, edit part meshes in local space, preview the creature, then publish new IDs.",
         LayoutEditorViewModel => "Replace the intro or connection background. Retail projects can also inspect UI layouts.",
         ObjectDebugEditorViewModel => "Inspect Setup and GfxObj meshes. Use this when a model looks wrong.",
         _ => "Choose World or Dungeon to build scenes, or Content to edit game data."
@@ -173,6 +176,7 @@ public partial class MainViewModel : ViewModelBase {
             Tab("spells", "Spells", "Edit spell table entries and components.", ActiveEditor is SpellEditorViewModel),
             Tab("weenies", "Weenies", "Search and edit weenies (items, NPCs, portals).", ActiveEditor is WeenieEditorViewModel),
             Tab("monsters", "Monsters", "Create and override creature weenies.", ActiveEditor is MonsterEditorViewModel),
+            Tab("monster-builder", "Monster Builder", "Clone a creature Setup and edit its meshes.", ActiveEditor is MonsterBuilderViewModel),
             Tab("skills", "Skills", "Edit the skill table.", ActiveEditor is SkillEditorViewModel),
             Tab("spellsets", "Spell Sets", "Edit spells granted by equipment sets.", ActiveEditor is SpellSetEditorViewModel),
             Tab("chargen", "Character", "Edit character creation heritages and starting towns.", ActiveEditor is CharGenEditorViewModel),
@@ -208,6 +212,7 @@ public partial class MainViewModel : ViewModelBase {
             case "chargen": SwitchToCharGenEditor(); break;
             case "weenies": SwitchToWeenieEditor(); break;
             case "monsters": SwitchToMonsterEditor(); break;
+            case "monster-builder": SwitchToMonsterBuilder(); break;
             case "layout": SwitchToLayoutEditor(); break;
             case "debug": SwitchToObjectDebugEditor(); break;
         }
@@ -234,12 +239,14 @@ public partial class MainViewModel : ViewModelBase {
     [RelayCommand]
     private void Undo() {
         if (ActiveEditor is DungeonEditorViewModel de) { de.UndoCommand.Execute(null); return; }
+        if (ActiveEditor is MonsterBuilderViewModel builder) { builder.UndoCommand.Execute(null); return; }
         GetLandscapeEditor()?.UndoCommand.Execute(null);
     }
 
     [RelayCommand]
     private void Redo() {
         if (ActiveEditor is DungeonEditorViewModel de) { de.RedoCommand.Execute(null); return; }
+        if (ActiveEditor is MonsterBuilderViewModel builder) { builder.RedoCommand.Execute(null); return; }
         GetLandscapeEditor()?.RedoCommand.Execute(null);
     }
 
@@ -583,6 +590,10 @@ public partial class MainViewModel : ViewModelBase {
     [RelayCommand]
     private void SwitchToMonsterEditor() {
         ActiveEditor = ProjectManager.Instance?.GetProjectService<MonsterEditorViewModel>();
+    }
+
+    private void SwitchToMonsterBuilder() {
+        ActiveEditor = ProjectManager.Instance?.GetProjectService<MonsterBuilderViewModel>();
     }
 
     [RelayCommand]
