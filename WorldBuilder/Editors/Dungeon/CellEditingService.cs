@@ -479,9 +479,10 @@ namespace WorldBuilder.Editors.Dungeon {
                 foreach (var cp in dc.CellPortals) {
                     if (cellNumSet.Contains(cp.OtherCellId) && cellIndexMap.TryGetValue(cp.OtherCellId, out int otherIdx)) {
                         if (myIdx < otherIdx) {
+                            var other = cells[otherIdx];
                             prefab.InternalPortals.Add(new PrefabPortal {
                                 CellIndexA = myIdx, PolyIdA = cp.PolygonId,
-                                CellIndexB = otherIdx, PolyIdB = cp.OtherPortalId,
+                                CellIndexB = otherIdx, PolyIdB = NeighborPolygonId(dc, cp, other),
                             });
                         }
                     }
@@ -549,7 +550,8 @@ namespace WorldBuilder.Editors.Dungeon {
                 prefab.Cells.OrderBy(c => c.EnvId).ThenBy(c => c.CellStruct)
                     .Select(c => $"{c.EnvId:X4}_{c.CellStruct}"))}";
 
-            Console.WriteLine($"[Dungeon] Extracted custom prefab: {prefab.DisplayName} ({prefab.Cells.Count} cells, {prefab.OpenFaces.Count} open faces)");
+            StitchMeetingDoors(prefab, dats);
+            Console.WriteLine($"[Dungeon] Extracted custom prefab: {prefab.DisplayName} ({prefab.Cells.Count} cells, {prefab.InternalPortals.Count} links, {prefab.OpenFaces.Count} open faces)");
             return prefab;
         }
 
@@ -612,9 +614,10 @@ namespace WorldBuilder.Editors.Dungeon {
                 foreach (var cp in dc.CellPortals) {
                     if (cellNumSet.Contains(cp.OtherCellId) && cellIndexMap.TryGetValue(cp.OtherCellId, out int otherIdx)) {
                         if (myIdx < otherIdx) {
+                            var other = cells[otherIdx];
                             prefab.InternalPortals.Add(new PrefabPortal {
                                 CellIndexA = myIdx, PolyIdA = cp.PolygonId,
-                                CellIndexB = otherIdx, PolyIdB = cp.OtherPortalId,
+                                CellIndexB = otherIdx, PolyIdB = NeighborPolygonId(dc, cp, other),
                             });
                         }
                     }
@@ -680,8 +683,100 @@ namespace WorldBuilder.Editors.Dungeon {
                 prefab.Cells.OrderBy(c => c.EnvId).ThenBy(c => c.CellStruct)
                     .Select(c => $"{c.EnvId:X4}_{c.CellStruct}"))}";
 
-            Console.WriteLine($"[Dungeon] Extracted full dungeon prefab: {prefab.DisplayName} ({prefab.Cells.Count} cells, {prefab.OpenFaces.Count} open faces)");
+            StitchMeetingDoors(prefab, dats);
+            Console.WriteLine($"[Dungeon] Extracted full dungeon prefab: {prefab.DisplayName} ({prefab.Cells.Count} cells, {prefab.InternalPortals.Count} links, {prefab.OpenFaces.Count} open faces)");
             return prefab;
+        }
+
+        /// <summary>
+        /// DAT portal records store the other door as an index into that cell's portal list.
+        /// Editor links store the polygon id. Prefer a real polygon id when the neighbor points back.
+        /// </summary>
+        static ushort NeighborPolygonId(DungeonCellData self, DungeonCellPortalData link, DungeonCellData other) {
+            foreach (var portal in other.CellPortals) {
+                if (portal.PolygonId == link.OtherPortalId && portal.OtherCellId == self.CellNumber)
+                    return portal.PolygonId;
+            }
+
+            if (link.OtherPortalId < other.CellPortals.Count) {
+                var indexed = other.CellPortals[link.OtherPortalId];
+                if (indexed.OtherCellId == self.CellNumber)
+                    return indexed.PolygonId;
+            }
+
+            return link.OtherPortalId;
+        }
+
+        /// <summary>
+        /// Saved pieces sometimes list every door as open, including doors that face another
+        /// cell in the same piece. Pair those doors so placement keeps the original joins.
+        /// </summary>
+        public static bool StitchMeetingDoors(DungeonPrefab prefab, IDatReaderWriter? dats) {
+            if (prefab.Cells.Count < 2 || dats == null || prefab.OpenFaces.Count < 2)
+                return false;
+
+            var faces = new List<(int Index, int CellIndex, ushort PolyId, Vector3 Centroid, Vector3 Normal)>();
+            for (int i = 0; i < prefab.OpenFaces.Count; i++) {
+                var face = prefab.OpenFaces[i];
+                if (face.CellIndex < 0 || face.CellIndex >= prefab.Cells.Count) continue;
+                var cell = prefab.Cells[face.CellIndex];
+                uint envFileId = (uint)(face.EnvId | 0x0D000000);
+                if (!dats.TryGet<Acme.Dat.Environment>(envFileId, out var env) || env == null
+                    || !env.Cells.TryGetValue(face.CellStruct, out var cellStruct))
+                    continue;
+                var geom = PortalSnapper.GetPortalGeometry(cellStruct, face.PolyId);
+                if (geom == null) continue;
+
+                var rot = new Quaternion(cell.RotX, cell.RotY, cell.RotZ, cell.RotW);
+                if (rot.LengthSquared() < 0.01f) rot = Quaternion.Identity;
+                rot = Quaternion.Normalize(rot);
+                var centroid = Vector3.Transform(geom.Value.Centroid, rot)
+                    + new Vector3(cell.OffsetX, cell.OffsetY, cell.OffsetZ);
+                var normal = Vector3.Transform(geom.Value.Normal, rot);
+                if (normal.LengthSquared() < 0.01f) continue;
+                faces.Add((i, face.CellIndex, face.PolyId, centroid, Vector3.Normalize(normal)));
+            }
+
+            var remove = new HashSet<int>();
+            for (int a = 0; a < faces.Count; a++) {
+                if (remove.Contains(faces[a].Index)) continue;
+                for (int b = a + 1; b < faces.Count; b++) {
+                    if (remove.Contains(faces[b].Index)) continue;
+                    if (faces[a].CellIndex == faces[b].CellIndex) continue;
+                    if (Vector3.Distance(faces[a].Centroid, faces[b].Centroid) > 2.5f) continue;
+                    if (Vector3.Dot(faces[a].Normal, faces[b].Normal) > -0.5f) continue;
+
+                    int cellA = faces[a].CellIndex;
+                    int cellB = faces[b].CellIndex;
+                    ushort polyA = faces[a].PolyId;
+                    ushort polyB = faces[b].PolyId;
+                    if (cellA > cellB) {
+                        (cellA, cellB) = (cellB, cellA);
+                        (polyA, polyB) = (polyB, polyA);
+                    }
+
+                    bool already = prefab.InternalPortals.Any(p =>
+                        p.CellIndexA == cellA && p.CellIndexB == cellB && p.PolyIdA == polyA && p.PolyIdB == polyB);
+                    if (!already) {
+                        prefab.InternalPortals.Add(new PrefabPortal {
+                            CellIndexA = cellA,
+                            PolyIdA = polyA,
+                            CellIndexB = cellB,
+                            PolyIdB = polyB,
+                        });
+                    }
+
+                    remove.Add(faces[a].Index);
+                    remove.Add(faces[b].Index);
+                    break;
+                }
+            }
+
+            if (remove.Count == 0) return false;
+
+            prefab.OpenFaces = prefab.OpenFaces.Where((_, i) => !remove.Contains(i)).ToList();
+            prefab.OpenFaceDirections = prefab.OpenFaces.Select(face => face.DirectionLabel).ToList();
+            return true;
         }
     }
 }

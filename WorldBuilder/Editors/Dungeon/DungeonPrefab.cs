@@ -194,6 +194,8 @@ namespace WorldBuilder.Editors.Dungeon {
         public string GraphType { get; set; } = "";
         public int MaxDepth { get; set; }
         public int BranchCount { get; set; }
+        /// <summary>Index of the entrance node. Offsets are relative to this cell.</summary>
+        public int EntryIndex { get; set; }
         public List<TemplateNode> Nodes { get; set; } = new();
         public List<TemplateConnection> Connections { get; set; } = new();
     }

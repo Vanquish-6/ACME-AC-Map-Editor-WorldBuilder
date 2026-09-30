@@ -299,6 +299,7 @@ namespace WorldBuilder.Editors.Dungeon.Tools {
                 return;
             }
 
+            CellEditingService.StitchMeetingDoors(prefab, ctx.Dats);
             var savedPrefab = _pendingPrefab;
             var savedRoom = _pendingRoom;
             var savedHasPreview = _hasPreview;
@@ -866,8 +867,8 @@ namespace WorldBuilder.Editors.Dungeon.Tools {
                     ctx, target, existing, otherDoors, dungeonCenter,
                     faceIdx, face, srcGeom.Value);
 
-                // Kit cells: only the recorded DAT plug for this doorway.
-                // Extracted multi-cell chunks can still try a geometric snap.
+                // Blueprints only sit on a doorway that used this exact face in retail.
+                // A 90° geometric guess puts the rest of the chunk through the wall.
                 if (retailOnly) continue;
 
                 if (wallDoor) {
@@ -932,9 +933,7 @@ namespace WorldBuilder.Editors.Dungeon.Tools {
         }
 
         private static bool UsesRetailDoorWiring(DungeonPrefab? prefab) =>
-            prefab != null && (
-                prefab.Signature.StartsWith("kitcell_", StringComparison.OrdinalIgnoreCase)
-                || (prefab.Cells.Count == 1 && !string.IsNullOrEmpty(prefab.KitRole)));
+            prefab != null && !prefab.Signature.StartsWith("custom_", StringComparison.OrdinalIgnoreCase);
 
         private bool TryAddProvenCandidates(
             DungeonEditingContext ctx,
@@ -958,7 +957,7 @@ namespace WorldBuilder.Editors.Dungeon.Tools {
                 float bias = -120f - Math.Min(match.Count, 4000) / 80f;
                 if (match.ExactMatch) bias -= 20f;
                 AddCandidate(ctx, target, existing, otherDoors, dungeonCenter,
-                    faceIdx, i, face, origin, ori, srcGeom, bias);
+                    faceIdx, i, face, origin, ori, srcGeom, bias, proven: true);
             }
             return true;
         }
@@ -972,10 +971,25 @@ namespace WorldBuilder.Editors.Dungeon.Tools {
             int faceIdx, int yaw, SourceFace face,
             Vector3 origin, Quaternion rot,
             PortalSnapper.PortalGeometry srcGeom,
-            float scoreBias = 0f) {
+            float scoreBias = 0f,
+            bool proven = false) {
 
             var tgtGeom = PortalSnapper.GetPortalGeometry(target.CellStruct, target.PortalId);
-            if (tgtGeom != null) {
+            if (proven) {
+                if (tgtGeom == null) return;
+                var srcCenter = origin + Vector3.Transform(srcGeom.Centroid, rot);
+                var srcN = srcGeom.Normal.LengthSquared() > 1e-8f
+                    ? Vector3.Normalize(Vector3.Transform(srcGeom.Normal, rot))
+                    : Vector3.UnitY;
+                var (tc, tn) = PortalSnapper.TransformPortalToWorld(
+                    tgtGeom.Value, target.Cell.Origin, target.Cell.Orientation);
+                var tgtN = tn.LengthSquared() > 1e-8f ? Vector3.Normalize(tn) : Vector3.UnitY;
+                // Keep the recorded retail pose. Re-snapping the yaw pulls the
+                // rest of a blueprint off the joint it was cut from.
+                if (Vector3.Distance(srcCenter, tc) > 1.25f || Vector3.Dot(srcN, tgtN) > -0.5f)
+                    return;
+            }
+            else if (tgtGeom != null) {
                 var (tc, tn) = PortalSnapper.TransformPortalToWorld(
                     tgtGeom.Value, target.Cell.Origin, target.Cell.Orientation);
                 (origin, rot) = PortalSnapper.ComputeFlushSnap(tc, tn, srcGeom, rot);
@@ -998,10 +1012,12 @@ namespace WorldBuilder.Editors.Dungeon.Tools {
                 for (int i = 0; i < _pendingPrefab.OpenFaces.Count; i++) {
                     if (i == faceIdx) continue;
                     var of = _pendingPrefab.OpenFaces[i];
+                    if (of.CellIndex < 0 || of.CellIndex >= poses.Count) continue;
                     var n = new Vector3(of.NormalX, of.NormalY, of.NormalZ);
                     if (n.LengthSquared() < 0.01f) continue;
-                    var worldN = Vector3.Normalize(Vector3.Transform(n, rot));
-                    var probe = origin + worldN * PortalPlacementFit.ProbeDistance;
+                    var pose = poses[of.CellIndex];
+                    var worldN = Vector3.Normalize(Vector3.Transform(n, pose.Rotation));
+                    var probe = pose.Origin + worldN * PortalPlacementFit.ProbeDistance;
                     if (existing.Any(r => r.CellNum != target.CellNum && r.WorldAabb.ContainsPoint(probe)))
                         bornBlocked++;
                 }
@@ -1124,12 +1140,89 @@ namespace WorldBuilder.Editors.Dungeon.Tools {
             }
 
             foreach (var ip in prefab.InternalPortals) {
-                if (cellMap.TryGetValue(ip.CellIndexA, out var cellA) && cellMap.TryGetValue(ip.CellIndexB, out var cellB)) {
-                    var cmd = new ConnectPortalCommand(cellA, ip.PolyIdA, cellB, ip.PolyIdB);
-                    cmd.Execute(ctx.Document);
-                    composite.Add(cmd);
+                if (!cellMap.TryGetValue(ip.CellIndexA, out var cellA) || !cellMap.TryGetValue(ip.CellIndexB, out var cellB))
+                    continue;
+                if (!TryResolveMeetingPolys(ctx, cellA, cellB, ip.PolyIdA, ip.PolyIdB, out var polyA, out var polyB))
+                    continue;
+                var cmd = new ConnectPortalCommand(cellA, polyA, cellB, polyB);
+                cmd.Execute(ctx.Document);
+                composite.Add(cmd);
+            }
+        }
+
+        /// <summary>
+        /// Link two cells of a blueprint on the doorways that actually meet.
+        /// Stored polygon ids are used when they sit on each other; otherwise the
+        /// closest opposing pair is used so a bad id does not leave a solid wall.
+        /// </summary>
+        private static bool TryResolveMeetingPolys(
+            DungeonEditingContext ctx,
+            ushort cellNumA, ushort cellNumB,
+            ushort requestedA, ushort requestedB,
+            out ushort polyA, out ushort polyB) {
+
+            polyA = requestedA;
+            polyB = requestedB;
+            if (ctx.Document == null || ctx.Dats == null) return false;
+            var cellA = ctx.Document.GetCell(cellNumA);
+            var cellB = ctx.Document.GetCell(cellNumB);
+            if (cellA == null || cellB == null) return false;
+
+            if (PortalsMeet(ctx, cellA, requestedA, cellB, requestedB))
+                return true;
+
+            var usedA = new HashSet<ushort>(cellA.CellPortals.Select(p => p.PolygonId));
+            var usedB = new HashSet<ushort>(cellB.CellPortals.Select(p => p.PolygonId));
+            var idsA = PortalIds(ctx, cellA);
+            var idsB = PortalIds(ctx, cellB);
+            float best = 1.25f;
+            bool found = false;
+            foreach (var pa in idsA) {
+                if (usedA.Contains(pa)) continue;
+                if (!TryPortalFrame(ctx, cellA, pa, out var ca, out var na)) continue;
+                foreach (var pb in idsB) {
+                    if (usedB.Contains(pb)) continue;
+                    if (!TryPortalFrame(ctx, cellB, pb, out var cb, out var nb)) continue;
+                    float dist = Vector3.Distance(ca, cb);
+                    if (dist > best || Vector3.Dot(na, nb) > -0.5f) continue;
+                    best = dist;
+                    polyA = pa;
+                    polyB = pb;
+                    found = true;
                 }
             }
+            return found;
+        }
+
+        private static bool PortalsMeet(
+            DungeonEditingContext ctx, DungeonCellData a, ushort polyA, DungeonCellData b, ushort polyB) {
+            if (!TryPortalFrame(ctx, a, polyA, out var ca, out var na)) return false;
+            if (!TryPortalFrame(ctx, b, polyB, out var cb, out var nb)) return false;
+            return Vector3.Distance(ca, cb) <= 1.25f && Vector3.Dot(na, nb) <= -0.5f;
+        }
+
+        private static bool TryPortalFrame(
+            DungeonEditingContext ctx, DungeonCellData cell, ushort polyId, out Vector3 center, out Vector3 normal) {
+            center = default;
+            normal = Vector3.UnitY;
+            if (ctx.Dats == null) return false;
+            uint envFileId = (uint)(cell.EnvironmentId | 0x0D000000);
+            if (!ctx.Dats.TryGet<Acme.Dat.Environment>(envFileId, out var env)) return false;
+            if (!env.Cells.TryGetValue(cell.CellStructure, out var cs)) return false;
+            var geom = PortalSnapper.GetPortalGeometry(cs, polyId);
+            if (geom == null) return false;
+            (center, normal) = PortalSnapper.TransformPortalToWorld(geom.Value, cell.Origin, cell.Orientation);
+            if (normal.LengthSquared() < 1e-8f) return false;
+            normal = Vector3.Normalize(normal);
+            return true;
+        }
+
+        private static List<ushort> PortalIds(DungeonEditingContext ctx, DungeonCellData cell) {
+            if (ctx.Dats == null) return new List<ushort>();
+            uint envFileId = (uint)(cell.EnvironmentId | 0x0D000000);
+            if (!ctx.Dats.TryGet<Acme.Dat.Environment>(envFileId, out var env)) return new List<ushort>();
+            if (!env.Cells.TryGetValue(cell.CellStructure, out var cs)) return new List<ushort>();
+            return PortalSnapper.GetPortalPolygonIds(cs);
         }
 
         private static OpenPortalHit? FindNearestOpenPortalCell(

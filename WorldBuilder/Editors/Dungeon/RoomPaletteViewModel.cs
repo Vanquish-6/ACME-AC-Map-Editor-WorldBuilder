@@ -87,6 +87,7 @@ namespace WorldBuilder.Editors.Dungeon {
         [NotifyPropertyChangedFor(nameof(RoomsToShow))]
         [NotifyPropertyChangedFor(nameof(IsStarterKitMode))]
         [NotifyPropertyChangedFor(nameof(ShowFullKitButton))]
+        [NotifyPropertyChangedFor(nameof(ShowPieceSearch))]
         private string _catalogCategory = "Starter kit";
 
         [ObservableProperty]
@@ -187,6 +188,10 @@ namespace WorldBuilder.Editors.Dungeon {
             "Sewer", "Cave", "Crypt", "All pieces", "Hallway", "Corner", "T-Junction", "Hub", "Dead End", "Chamber", "Full Dungeon"
         };
         public bool IsStarterKitMode => !string.IsNullOrEmpty(CatalogCategory) && _kits.ContainsKey(CatalogCategory);
+        public bool ShowPieceSearch => !IsStarterKitMode || ShowFavoritePrefabsMode;
+        public string FavoritesButtonText => _favoritePrefabSignatures.Count == 0
+            ? "Favorites"
+            : $"Favorites ({_favoritePrefabSignatures.Count})";
         public bool HasCompatiblePrefabs => PrefabEntries.Any(e => e.IsCompatible);
         public bool ShowFullKitButton => IsStarterKitMode && ShowCompatibleOnly;
         [ObservableProperty]
@@ -437,7 +442,12 @@ namespace WorldBuilder.Editors.Dungeon {
                 }
             }
             catch (Exception ex) {
-                Console.WriteLine($"[RoomPalette] Auto-analysis failed (non-fatal): {ex.Message}");
+                Console.WriteLine($"[RoomPalette] Auto-analysis failed (non-fatal): {ex}");
+                await Dispatcher.UIThread.InvokeAsync(() => {
+                    IsBuildingKnowledgeBase = false;
+                    BuildingMessage = "";
+                    StatusText = "Piece catalog failed to build. Use Analyze Rooms to try again.";
+                });
             }
         }
 
@@ -604,6 +614,7 @@ namespace WorldBuilder.Editors.Dungeon {
             if (value) {
                 ShowCatalogMode = false; ShowStarterMode = false; ShowFavoritesMode = false; ShowPrefabsMode = false;
             }
+            OnPropertyChanged(nameof(ShowPieceSearch));
             ApplyPrefabFilter();
             if (value) _ = GeneratePrefabThumbnailsAsync();
         }
@@ -641,6 +652,7 @@ namespace WorldBuilder.Editors.Dungeon {
             }
             if (added > 0) {
                 SavePrefabFavorites();
+                OnPropertyChanged(nameof(FavoritesButtonText));
                 ApplyPrefabFilter();
             }
             return added;
@@ -654,6 +666,7 @@ namespace WorldBuilder.Editors.Dungeon {
             _allPrefabs.RemoveAll(p => p.Signature.StartsWith("custom_"));
             SavePrefabFavorites();
             SaveCustomPrefabs();
+            OnPropertyChanged(nameof(FavoritesButtonText));
             ApplyPrefabFilter();
             Console.WriteLine($"[RoomPalette] Cleared all favorites and custom prefabs ({count} removed)");
             return count;
@@ -664,7 +677,11 @@ namespace WorldBuilder.Editors.Dungeon {
             if (_favoritePrefabSignatures.Contains(sig)) {
                 _favoritePrefabSignatures.Remove(sig);
                 entry.IsFavorite = false;
-                Console.WriteLine($"[RoomPalette] Unfavorited prefab: {entry.DisplayName} (sig={sig.Substring(0, Math.Min(30, sig.Length))}...)");
+                if (sig.StartsWith("custom_", StringComparison.Ordinal)) {
+                    _customPrefabs.RemoveAll(p => p.Signature == sig);
+                    _allPrefabs.RemoveAll(p => p.Signature == sig);
+                    SaveCustomPrefabs();
+                }
             }
             else {
                 _favoritePrefabSignatures.Add(sig);
@@ -672,6 +689,7 @@ namespace WorldBuilder.Editors.Dungeon {
                 Console.WriteLine($"[RoomPalette] Favorited prefab: {entry.DisplayName} (sig={sig.Substring(0, Math.Min(30, sig.Length))}...) — total favorites: {_favoritePrefabSignatures.Count}");
             }
             SavePrefabFavorites();
+            OnPropertyChanged(nameof(FavoritesButtonText));
             ApplyPrefabFilter();
         }
 
@@ -681,6 +699,7 @@ namespace WorldBuilder.Editors.Dungeon {
             _favoritePrefabSignatures.Add(prefab.Signature);
             SaveCustomPrefabs();
             SavePrefabFavorites();
+            OnPropertyChanged(nameof(FavoritesButtonText));
             ApplyPrefabFilter();
             _ = GeneratePrefabThumbnailsAsync();
         }
@@ -688,26 +707,33 @@ namespace WorldBuilder.Editors.Dungeon {
         public void LoadPrefabEntries() {
             try {
                 var kb = DungeonKnowledgeBuilder.LoadCached();
-                if (kb == null) return;
-
-                if (kb.Prefabs.Count > 0) {
+                _allPrefabs = new List<DungeonPrefab>();
+                if (kb?.Prefabs.Count > 0) {
                     if (kb.Prefabs.Any(p => string.IsNullOrEmpty(p.DisplayName))) {
                         Console.WriteLine($"[RoomPalette] Naming {kb.Prefabs.Count} prefabs from cached KB...");
                         PrefabNamer.NameAll(kb.Prefabs, kb.Catalog);
                     }
 
-                    _allPrefabs = new List<DungeonPrefab>(kb.Prefabs);
-
-                    LoadCustomPrefabs();
-                    foreach (var cp in _customPrefabs) {
-                        if (!_allPrefabs.Any(p => p.Signature == cp.Signature))
-                            _allPrefabs.Add(cp);
-                    }
-
-                    LoadPrefabFavorites();
+                    _allPrefabs.AddRange(kb.Prefabs);
                 }
 
-                InstallBuildKits(kb);
+                LoadCustomPrefabs();
+                foreach (var cp in _customPrefabs) {
+                    if (!_allPrefabs.Any(p => p.Signature == cp.Signature))
+                        _allPrefabs.Add(cp);
+                }
+
+                LoadPrefabFavorites();
+                OnPropertyChanged(nameof(FavoritesButtonText));
+                bool stitched = false;
+                foreach (var custom in _customPrefabs) {
+                    if (CellEditingService.StitchMeetingDoors(custom, _dats))
+                        stitched = true;
+                }
+                if (stitched)
+                    SaveCustomPrefabs();
+                if (kb != null)
+                    InstallBuildKits(kb);
                 ApplyPrefabFilter();
                 Console.WriteLine($"[RoomPalette] Loaded {_allPrefabs.Count} prefab entries ({_customPrefabs.Count} custom, {_favoritePrefabSignatures.Count} favorites, {_kits.Count} kits)");
                 _ = GeneratePrefabThumbnailsAsync();
@@ -719,7 +745,9 @@ namespace WorldBuilder.Editors.Dungeon {
 
         private void InstallBuildKits(DungeonKnowledgeBase kb) {
             _kits.Clear();
-            var built = DungeonBuildKitBuilder.BuildAll(kb, _dats);
+            var built = DungeonBuildKitBuilder.BuildFromModules(kb);
+            if (built.Count == 0)
+                built = DungeonBuildKitBuilder.BuildAll(kb, _dats);
             if (built.Count > 0) {
                 var best = built[0];
                 _kits["Starter kit"] = best;
@@ -863,7 +891,7 @@ namespace WorldBuilder.Editors.Dungeon {
 
             var source = filtered.ToList();
             var entries = new List<PrefabListEntry>();
-            int listCap = _kits.ContainsKey(category) ? 12 : 40;
+            int listCap = ShowFavoritePrefabsMode ? 200 : _kits.ContainsKey(category) ? 12 : 40;
 
             var compatible = new List<DungeonPrefab>();
             var others = new List<DungeonPrefab>();
@@ -874,17 +902,21 @@ namespace WorldBuilder.Editors.Dungeon {
                 foreach (var prefab in source) {
                     if (PrefabWouldPlace(prefab, compatibleRoomTypes)) {
                         compatible.Add(prefab);
-                        if (ShowCompatibleOnly && compatible.Count >= listCap) break;
+                        if ((ShowCompatibleOnly || haveOpenDoors) && compatible.Count >= listCap) break;
                     }
                     else {
                         others.Add(prefab);
                     }
-                    if (!ShowCompatibleOnly && compatible.Count >= listCap && others.Count >= listCap)
+                    if (!haveOpenDoors && !ShowCompatibleOnly && compatible.Count >= listCap && others.Count >= listCap)
                         break;
                 }
             }
 
-            if (filterByFit && ShowCompatibleOnly) {
+            if (haveOpenDoors && filterByFit) {
+                foreach (var prefab in compatible.Take(listCap))
+                    entries.Add(BuildPrefabEntry(prefab, isCompatible: true));
+            }
+            else if (filterByFit && ShowCompatibleOnly) {
                 foreach (var prefab in compatible.Take(listCap))
                     entries.Add(BuildPrefabEntry(prefab, isCompatible: true));
             }
@@ -901,13 +933,19 @@ namespace WorldBuilder.Editors.Dungeon {
 
             foreach (var entry in entries) {
                 entry.IsFavorite = _favoritePrefabSignatures.Contains(entry.Prefab.Signature);
+                entry.ShowRemove = ShowFavoritePrefabsMode;
                 if (_prefabThumbCache.TryGetValue(entry.Prefab.Signature, out var cached))
                     entry.Thumbnail = cached;
             }
 
             PrefabEntries = new ObservableCollection<PrefabListEntry>(entries);
 
-            if (_kits.ContainsKey(category) && !ShowFavoritePrefabsMode) {
+            if (ShowFavoritePrefabsMode) {
+                StatusText = entries.Count > 0
+                    ? $"{entries.Count} saved piece{(entries.Count == 1 ? "" : "s")}. Click one to place it."
+                    : "No saved pieces yet. Use Build → Favorite individual pieces, or Favorite as whole dungeon.";
+            }
+            else if (_kits.ContainsKey(category)) {
                 if (_activeOpenPortals.Count == 0 && !ShowCompatibleOnly)
                     StatusText = "Click a hallway to place the first room";
                 else if (ShowCompatibleOnly)
@@ -917,6 +955,11 @@ namespace WorldBuilder.Editors.Dungeon {
                 else
                     StatusText = "Click a doorway so it turns yellow, then hover a room to preview.";
             }
+            else if (_activeOpenPortals.Count > 0) {
+                StatusText = entries.Count > 0
+                    ? "These pieces used that doorway in retail"
+                    : "Nothing in this list used that doorway. Click another glow.";
+            }
 
             OnPropertyChanged(nameof(ShowFullKitButton));
 
@@ -925,6 +968,18 @@ namespace WorldBuilder.Editors.Dungeon {
         }
 
         private bool PrefabWouldPlace(DungeonPrefab prefab, HashSet<(ushort, ushort)>? indexTypes) {
+            if (_activeOpenPortals.Count > 0 && PortalIndex != null && prefab.OpenFaces.Count > 0
+                && !prefab.Signature.StartsWith("custom_", StringComparison.OrdinalIgnoreCase)) {
+                foreach (var door in _activeOpenPortals) {
+                    foreach (var face in prefab.OpenFaces) {
+                        if (PortalIndex.GetProvenMatches(
+                                door.Item1, door.Item2, door.Item3,
+                                face.EnvId, face.CellStruct, face.PolyId).Count > 0)
+                            return true;
+                    }
+                }
+                return false;
+            }
             if (indexTypes is { Count: > 0 }) {
                 foreach (var cell in prefab.Cells) {
                     if (indexTypes.Contains((cell.EnvId, cell.CellStruct)))

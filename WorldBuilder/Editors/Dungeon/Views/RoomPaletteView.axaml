@@ -17,24 +17,18 @@
     </UserControl.Styles>
 
     <DockPanel>
-        <Border DockPanel.Dock="Top" Padding="6,6,6,2"
-                IsVisible="{Binding !IsStarterKitMode}">
+        <Border DockPanel.Dock="Top" Padding="6,6,6,2">
             <Grid ColumnDefinitions="*,Auto">
-                <TextBox Text="{Binding SearchText}"
+                <TextBox Grid.Column="0"
+                         Text="{Binding SearchText}"
                          Watermark="Search pieces..."
-                         FontSize="11" />
+                         FontSize="11"
+                         IsVisible="{Binding ShowPieceSearch}" />
                 <ToggleButton Grid.Column="1"
                               IsChecked="{Binding ShowFavoritePrefabsMode}"
-                              ToolTip.Tip="Show only favorite pieces"
-                              Padding="4,2" FontSize="11" Margin="6,0,0,0"
-                              Background="Transparent" BorderThickness="0">
-                    <Panel>
-                        <TextBlock Text="&#x2605;" FontSize="14" Foreground="#c8a832"
-                                   IsVisible="{Binding ShowFavoritePrefabsMode}" />
-                        <TextBlock Text="&#x2606;" FontSize="14" Foreground="#5a4a6e"
-                                   IsVisible="{Binding !ShowFavoritePrefabsMode}" />
-                    </Panel>
-                </ToggleButton>
+                              Content="{Binding FavoritesButtonText}"
+                              ToolTip.Tip="Show saved and favorited rooms"
+                              Padding="8,2" FontSize="11" Margin="6,0,0,0" />
             </Grid>
         </Border>
 
@@ -121,14 +115,26 @@
                                        IsVisible="{Binding Thumbnail, Converter={x:Static ObjectConverters.IsNotNull}}" />
                             </Panel>
 
-                            <TextBlock Grid.Column="1" Grid.Row="0"
-                                       Text="{Binding DisplayName}"
-                                       Foreground="#c0e0e0"
-                                       FontSize="13"
-                                       FontWeight="SemiBold"
-                                       TextWrapping="Wrap"
-                                       TextTrimming="CharacterEllipsis"
-                                       MaxLines="2" />
+                            <Grid Grid.Column="1" Grid.Row="0" ColumnDefinitions="*,Auto">
+                                <TextBlock Grid.Column="0"
+                                           Text="{Binding DisplayName}"
+                                           Foreground="#c0e0e0"
+                                           FontSize="13"
+                                           FontWeight="SemiBold"
+                                           TextWrapping="Wrap"
+                                           TextTrimming="CharacterEllipsis"
+                                           MaxLines="2"
+                                           VerticalAlignment="Center" />
+                                <Button Grid.Column="1"
+                                        Content="Remove"
+                                        Classes="ghost"
+                                        Padding="6,2"
+                                        Margin="6,0,0,0"
+                                        FontSize="10"
+                                        Click="FavoriteStar_Click"
+                                        IsVisible="{Binding ShowRemove}"
+                                        ToolTip.Tip="Take this piece off favorites" />
+                            </Grid>
 
                             <TextBlock Grid.Column="1" Grid.Row="1"
                                        Text="{Binding DoorListText}"

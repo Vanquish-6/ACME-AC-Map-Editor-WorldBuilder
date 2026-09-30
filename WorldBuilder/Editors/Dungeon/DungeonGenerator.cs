@@ -34,11 +34,13 @@ namespace WorldBuilder.Editors.Dungeon {
     }
 
     /// <summary>
-    /// Generates dungeons by chaining prefabs using proven portal transforms from real game data.
-    /// Connections use the exact relative offsets/rotations observed in actual AC dungeons,
-    /// falling back to geometric snap only when no proven data exists.
+    /// Generates dungeons by stamping a real retail blueprint when one fits the
+    /// requested size and style. Otherwise chains prefabs using proven portal
+    /// transforms from real game data.
     /// </summary>
     public static class DungeonGenerator {
+        /// <summary>Set when the last generate call stamped a retail blueprint.</summary>
+        public static string LastSourceName { get; private set; } = "";
 
         private const float OverlapMinDistDefault = 6.0f;
 
@@ -49,9 +51,10 @@ namespace WorldBuilder.Editors.Dungeon {
         /// </summary>
         private const float AABBShrink = 0.25f;
         private const float MinPortalArea = 0.01f;
-        // AC dungeons are authored below terrain level; keep generated dungeons
-        // anchored underground so teleports/loads match expected runtime behavior.
-        private const float GeneratedDungeonBaseZ = -50f;
+        // Cell origins stay in the same frame as hand-placed rooms (Z = 0).
+        // The dungeon view adds its own depth offset when drawing, so a second
+        // -50 here sinks a generated dungeon below anything built by hand.
+        private const float GeneratedDungeonBaseZ = 0f;
         private const bool EnableAutoFurnish = true;
 
         /// <summary>
@@ -103,6 +106,14 @@ namespace WorldBuilder.Editors.Dungeon {
             List<RoomEntry> availableRooms,
             IDatReaderWriter dats,
             ushort landblockKey) {
+
+            LastSourceName = "";
+            var kb = DungeonKnowledgeBuilder.LoadCached();
+            if (kb != null && !p.UseFavoritesOnly) {
+                var stamped = TryGenerateFromBlueprint(p, kb, dats, landblockKey);
+                if (stamped != null)
+                    return stamped;
+            }
 
             // Auto-retry: if growth stalls badly (< 60% of target), try again with
             // a different seed. This avoids presenting users with stunted dungeons
@@ -1456,6 +1467,200 @@ namespace WorldBuilder.Editors.Dungeon {
             }
 
             return doc;
+        }
+
+        private static DungeonDocument? TryGenerateFromBlueprint(
+            GeneratorParams p,
+            DungeonKnowledgeBase kb,
+            IDatReaderWriter dats,
+            ushort landblockKey) {
+
+            if (kb.Templates == null || kb.Templates.Count == 0) return null;
+
+            var bounds = new Dictionary<(ushort, ushort), float>();
+            foreach (var cr in kb.Catalog) {
+                var key = (cr.EnvId, cr.CellStruct);
+                if (!bounds.ContainsKey(key))
+                    bounds[key] = MathF.Max(cr.BoundsWidth, cr.BoundsDepth);
+            }
+
+            string? style = p.Style is "All" or "Custom" or "" ? null : p.Style;
+            var ranked = new List<(DungeonTemplate template, float score)>();
+            foreach (var t in kb.Templates) {
+                if (t.Nodes == null || t.Nodes.Count < 4 || t.Connections == null || t.Connections.Count == 0)
+                    continue;
+                if (style != null && !string.IsNullOrEmpty(t.Style) &&
+                    !t.Style.Equals(style, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                float minZ = float.MaxValue, maxZ = float.MinValue;
+                float extent = 0;
+                int sized = 0;
+                foreach (var n in t.Nodes) {
+                    if (n.OffsetZ < minZ) minZ = n.OffsetZ;
+                    if (n.OffsetZ > maxZ) maxZ = n.OffsetZ;
+                    if (bounds.TryGetValue((n.EnvId, n.CellStruct), out var dim)) {
+                        extent += dim;
+                        sized++;
+                    }
+                }
+                if (!p.AllowVertical && maxZ - minZ > 8f) continue;
+                if (sized > 0) {
+                    float avg = extent / sized;
+                    if (p.RoomSize == 0 && avg > 22f) continue;
+                    if (p.RoomSize >= 2 && avg < 8f) continue;
+                }
+
+                int count = t.Nodes.Count;
+                if (count > p.RoomCount * 3 || count < p.RoomCount * 0.65f) continue;
+
+                float sizeScore = count >= p.RoomCount
+                    ? 1f - (count - p.RoomCount) / (float)Math.Max(1, p.RoomCount * 2)
+                    : 1f - (p.RoomCount - count) / (float)Math.Max(1, p.RoomCount);
+                float branchScore = p.Branching switch {
+                    0 => t.GraphType == "Linear" || t.BranchCount == 0 ? 1.25f : 0.45f,
+                    2 => t.BranchCount >= 2 || t.GraphType == "Complex" ? 1.25f : 0.55f,
+                    _ => t.GraphType == "Tree" ? 1.15f : 0.9f
+                };
+                float nameBonus = string.IsNullOrWhiteSpace(t.DungeonName) ? 0f : 0.12f;
+                ranked.Add((t, Math.Max(0.05f, sizeScore) * branchScore + nameBonus));
+            }
+
+            if (ranked.Count == 0) {
+                Console.WriteLine($"[DungeonGen] No retail blueprint within range of {p.RoomCount} rooms ({kb.Templates.Count} templates)");
+                return null;
+            }
+
+            ranked.Sort((a, b) => b.score.CompareTo(a.score));
+            var rng = p.Seed != 0 ? new Random(p.Seed) : new Random();
+            int pool = Math.Min(5, ranked.Count);
+            var order = Enumerable.Range(0, pool).OrderBy(_ => rng.Next()).ToList();
+            foreach (var idx in order) {
+                var template = ranked[idx].template;
+                var doc = InstantiateBlueprint(p, kb, dats, landblockKey, template);
+                if (doc == null) continue;
+                int minOk = Math.Max(4, (int)(Math.Min(p.RoomCount, template.Nodes.Count) * 0.7f));
+                if (doc.Cells.Count < minOk) continue;
+                LastSourceName = string.IsNullOrWhiteSpace(template.DungeonName)
+                    ? $"LB {template.SourceLandblock:X4}"
+                    : template.DungeonName;
+                Console.WriteLine($"[DungeonGen] Stamped blueprint '{LastSourceName}' " +
+                    $"({doc.Cells.Count} cells, template {template.Nodes.Count}, target {p.RoomCount}, {template.GraphType})");
+                return doc;
+            }
+
+            Console.WriteLine("[DungeonGen] Blueprint stamps failed portal wiring — falling back to prefab growth");
+            return null;
+        }
+
+        private static DungeonDocument? InstantiateBlueprint(
+            GeneratorParams p,
+            DungeonKnowledgeBase kb,
+            IDatReaderWriter dats,
+            ushort landblockKey,
+            DungeonTemplate template) {
+
+            var keep = TrimBlueprint(template, p.RoomCount);
+            if (keep.Count < 4) return null;
+            if (keep.Count > p.RoomCount + Math.Max(4, p.RoomCount / 5) && keep.Count > p.RoomCount * 1.35f)
+                return null;
+
+            var doc = new DungeonDocument(new Microsoft.Extensions.Logging.Abstractions.NullLogger<DungeonDocument>());
+            doc.SetLandblockKey(landblockKey);
+            var map = new Dictionary<int, ushort>();
+            foreach (var node in template.Nodes) {
+                if (!keep.Contains(node.Index) || node.EnvId == 0) continue;
+                var origin = new Vector3(node.OffsetX, node.OffsetY, GeneratedDungeonBaseZ + node.OffsetZ);
+                var rot = ConstrainToYaw(new Quaternion(node.RotX, node.RotY, node.RotZ, node.RotW));
+                var surfaces = node.Surfaces != null ? new List<ushort>(node.Surfaces) : new List<ushort>();
+                var num = doc.AddCell(node.EnvId, node.CellStruct, origin, rot, surfaces);
+                if (num == 0) return null;
+                map[node.Index] = num;
+            }
+            if (map.Count < 4) return null;
+
+            int attempted = 0, linked = 0;
+            foreach (var conn in template.Connections) {
+                if (!map.TryGetValue(conn.NodeA, out var cellA) || !map.TryGetValue(conn.NodeB, out var cellB))
+                    continue;
+                attempted++;
+                if (TryConnectPortalsSafe(doc, dats, cellA, conn.PolyIdA, cellB, conn.PolyIdB,
+                        allowRemap: true, remapMaxCentroidDist: 1.25f))
+                    linked++;
+            }
+            if (attempted == 0 || linked < attempted * 0.8f) return null;
+
+            var geoCache = new PortalGeometryCache(dats);
+            doc.RecomputePortalFlags(dats);
+            SetExactMatchFlags(doc, dats, geoCache);
+
+            if (p.Style.Equals("Custom", StringComparison.OrdinalIgnoreCase) &&
+                (p.CustomWallSurface != 0 || p.CustomFloorSurface != 0)) {
+                ushort wall = p.CustomWallSurface != 0 ? p.CustomWallSurface : (ushort)0x032A;
+                ushort floor = p.CustomFloorSurface != 0 ? p.CustomFloorSurface : (ushort)0x032B;
+                ApplyThemeSurfaces(doc, wall, floor);
+            }
+
+            if (EnableAutoFurnish && p.FurnishRooms && kb.RoomStatics.Count > 0)
+                FurnishRooms(doc, kb);
+
+            doc.ComputeVisibleCells();
+            return doc;
+        }
+
+        /// <summary>
+        /// Drop far dead-ends until the blueprint is near the requested room count.
+        /// The entrance and any room that would split the dungeon stay put.
+        /// </summary>
+        private static HashSet<int> TrimBlueprint(DungeonTemplate template, int target) {
+            var keep = new HashSet<int>(template.Nodes.Select(n => n.Index));
+            int entry = keep.Contains(template.EntryIndex) ? template.EntryIndex : template.Nodes[0].Index;
+            var adj = new Dictionary<int, List<int>>();
+            foreach (var n in keep) adj[n] = new List<int>();
+            foreach (var conn in template.Connections) {
+                if (!adj.ContainsKey(conn.NodeA) || !adj.ContainsKey(conn.NodeB) || conn.NodeA == conn.NodeB)
+                    continue;
+                adj[conn.NodeA].Add(conn.NodeB);
+                adj[conn.NodeB].Add(conn.NodeA);
+            }
+
+            while (keep.Count > target) {
+                int leaf = -1;
+                int bestDepth = -1;
+                foreach (var n in keep) {
+                    if (n == entry) continue;
+                    int degree = 0;
+                    if (adj.TryGetValue(n, out var nbrs)) {
+                        foreach (var other in nbrs)
+                            if (keep.Contains(other)) degree++;
+                    }
+                    if (degree != 1) continue;
+                    int depth = BlueprintDepth(entry, n, keep, adj);
+                    if (depth > bestDepth) {
+                        bestDepth = depth;
+                        leaf = n;
+                    }
+                }
+                if (leaf < 0) break;
+                keep.Remove(leaf);
+            }
+            return keep;
+        }
+
+        private static int BlueprintDepth(int entry, int target, HashSet<int> keep, Dictionary<int, List<int>> adj) {
+            var seen = new HashSet<int> { entry };
+            var q = new Queue<(int node, int depth)>();
+            q.Enqueue((entry, 0));
+            while (q.Count > 0) {
+                var (node, depth) = q.Dequeue();
+                if (node == target) return depth;
+                if (!adj.TryGetValue(node, out var nbrs)) continue;
+                foreach (var n in nbrs) {
+                    if (!keep.Contains(n) || !seen.Add(n)) continue;
+                    q.Enqueue((n, depth + 1));
+                }
+            }
+            return 0;
         }
 
         private static List<ushort> PlacePrefabAtOrigin(DungeonDocument doc, IDatReaderWriter dats, DungeonPrefab prefab) {

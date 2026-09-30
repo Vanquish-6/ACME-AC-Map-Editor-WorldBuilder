@@ -1816,6 +1816,7 @@ namespace WorldBuilder.Editors.Dungeon {
             HasDungeon = true;
             EditingContext.Document = _document;
 
+            CellEditingService.StitchMeetingDoors(prefab, EditingContext.Dats);
             var roomTool = Tools.OfType<RoomPlacementTool>().FirstOrDefault();
             if (roomTool != null) {
                 roomTool.SetPrefab(prefab);
@@ -2106,7 +2107,9 @@ namespace WorldBuilder.Editors.Dungeon {
             var modeLabel = result.UseFavoritesOnly ? "favorites-only" : result.Style;
             StatusText = $"Generating {result.RoomCount}-size {modeLabel} dungeon...";
             try {
-                ushort lbKey = _loadedLandblockKey != 0 ? _loadedLandblockKey : (ushort)0xFFFF;
+                ushort lbKey = _loadedLandblockKey;
+                if (lbKey == 0 || lbKey == 0xFFFF)
+                    lbKey = FindEmptyCustomLandblock();
                 if (_document == null) {
                     _loadedLandblockKey = lbKey;
                     _document = GetOrCreateDungeonDoc(lbKey);
@@ -2148,7 +2151,10 @@ namespace WorldBuilder.Editors.Dungeon {
                 var valStr = valErrors > 0 ? $"  ({valErrors} errors, {valWarnings} warnings — run Validate)"
                            : valWarnings > 0 ? $"  ({valWarnings} warnings)"
                            : "";
-                StatusText = $"Generated size {CellCount} ({openPortals} open doorways){optsStr}.{valStr}";
+                var source = string.IsNullOrEmpty(DungeonGenerator.LastSourceName)
+                    ? ""
+                    : $" from {DungeonGenerator.LastSourceName}";
+                StatusText = $"Generated size {CellCount}{source} ({openPortals} open doorways){optsStr}.{valStr}";
                 Console.WriteLine($"[Dungeon] Generated: {CellCount} cells, {result.RoomCount} target, {openPortals} open portals, style={result.Style}, favorites={result.UseFavoritesOnly}, seed={result.Seed}");
             }
             catch (Exception ex) {

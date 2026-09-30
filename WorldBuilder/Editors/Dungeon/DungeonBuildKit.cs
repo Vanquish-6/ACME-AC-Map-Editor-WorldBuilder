@@ -49,6 +49,126 @@ namespace WorldBuilder.Editors.Dungeon {
             ["Stair"] = 6
         };
 
+        /// <summary>
+        /// Kits made from real multi-cell chunks cut out of finished dungeons.
+        /// These already have the offsets and internal doors retail used.
+        /// </summary>
+        public static List<DungeonBuildKit> BuildFromModules(DungeonKnowledgeBase kb) {
+            var kits = new List<DungeonBuildKit>();
+            if (kb?.Prefabs == null || kb.Prefabs.Count == 0) return kits;
+
+            var modules = kb.Prefabs.Where(IsBlueprintModule).ToList();
+            if (modules.Count < 6) return kits;
+
+            var styles = modules
+                .GroupBy(p => string.IsNullOrWhiteSpace(p.Style) ? "Stone" : p.Style, StringComparer.OrdinalIgnoreCase)
+                .Where(g => g.Count() >= 6)
+                .OrderByDescending(g => PreferredStyles.Contains(g.Key, StringComparer.OrdinalIgnoreCase) ? 1 : 0)
+                .ThenByDescending(g => g.Sum(p => p.UsageCount))
+                .Take(4)
+                .Select(g => g.Key);
+
+            var mates = DoorMates(kb.Edges);
+            foreach (var style in styles) {
+                var pool = modules
+                    .Where(p => p.Style.Equals(style, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                var selected = PickModuleSet(pool, mates);
+                if (selected.Count < 6) continue;
+                int usage = selected.Sum(p => p.UsageCount);
+                kits.Add(new DungeonBuildKit {
+                    Style = style,
+                    CategoryName = style,
+                    Hint = "These chunks plug into each other the way they did in retail. Yellow door, then pick a piece.",
+                    Score = usage + selected.Count * 100,
+                    Pieces = selected
+                });
+            }
+
+            return kits.OrderByDescending(k => k.Score).ToList();
+        }
+
+        private static bool IsBlueprintModule(DungeonPrefab p) {
+            if (p.Cells.Count < 2 || p.Cells.Count > 5) return false;
+            if (p.InternalPortals.Count < 1) return false;
+            if (p.OpenFaces.Count < 1 || p.OpenFaces.Count > 4) return false;
+            if (p.HasNoRoof) return false;
+            if (p.Category is "Full Dungeon") return false;
+            return p.Category is "Hallway" or "Corner" or "T-Junction" or "Hub" or "Dead End" or "Chamber" or "Other";
+        }
+
+        private static Dictionary<(ushort env, ushort cs, ushort poly), HashSet<(ushort env, ushort cs, ushort poly)>> DoorMates(
+            List<AdjacencyEdge>? edges) {
+            var map = new Dictionary<(ushort, ushort, ushort), HashSet<(ushort, ushort, ushort)>>();
+            if (edges == null) return map;
+            void Add((ushort, ushort, ushort) a, (ushort, ushort, ushort) b) {
+                if (a == b) return;
+                if (!map.TryGetValue(a, out var set)) {
+                    set = new HashSet<(ushort, ushort, ushort)>();
+                    map[a] = set;
+                }
+                set.Add(b);
+            }
+            foreach (var e in edges) {
+                var a = (e.EnvIdA, e.CellStructA, e.PolyIdA);
+                var b = (e.EnvIdB, e.CellStructB, e.PolyIdB);
+                Add(a, b);
+                Add(b, a);
+            }
+            return map;
+        }
+
+        private static bool PiecesPlug(
+            DungeonPrefab a, DungeonPrefab b,
+            Dictionary<(ushort, ushort, ushort), HashSet<(ushort, ushort, ushort)>> mates) {
+            foreach (var face in a.OpenFaces) {
+                if (!mates.TryGetValue((face.EnvId, face.CellStruct, face.PolyId), out var options))
+                    continue;
+                foreach (var other in b.OpenFaces) {
+                    if (options.Contains((other.EnvId, other.CellStruct, other.PolyId)))
+                        return true;
+                }
+            }
+            return false;
+        }
+
+        private static List<DungeonPrefab> PickModuleSet(
+            List<DungeonPrefab> pool,
+            Dictionary<(ushort, ushort, ushort), HashSet<(ushort, ushort, ushort)>> mates) {
+            var quotas = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) {
+                ["Hallway"] = 2,
+                ["Corner"] = 2,
+                ["T-Junction"] = 1,
+                ["Dead End"] = 2,
+                ["Chamber"] = 1,
+                ["Hub"] = 1,
+                ["Other"] = 1
+            };
+            var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var selected = new List<DungeonPrefab>();
+            var ordered = pool
+                .OrderByDescending(p => pool.Count(o => !ReferenceEquals(o, p) && PiecesPlug(p, o, mates)))
+                .ThenByDescending(p => p.UsageCount)
+                .ThenBy(p => p.Cells.Count);
+            foreach (var piece in ordered) {
+                if (selected.Count >= 8) break;
+                string role = string.IsNullOrEmpty(piece.Category) ? "Other" : piece.Category;
+                int have = counts.GetValueOrDefault(role);
+                int want = quotas.GetValueOrDefault(role, 1);
+                if (have >= want) continue;
+                if (selected.Count > 0 && !selected.Any(s => PiecesPlug(piece, s, mates)))
+                    continue;
+                int sameSource = selected.Count(p => p.SourceLandblock != 0 && p.SourceLandblock == piece.SourceLandblock);
+                if (sameSource >= 2) continue;
+                selected.Add(piece);
+                counts[role] = have + 1;
+            }
+            return selected
+                .OrderBy(p => RoleSort.GetValueOrDefault(p.Category, 9))
+                .ThenByDescending(p => p.UsageCount)
+                .ToList();
+        }
+
         public static List<DungeonBuildKit> BuildAll(DungeonKnowledgeBase kb, IDatReaderWriter dats) {
             var kits = new List<DungeonBuildKit>();
             if (kb?.Catalog == null || kb.Catalog.Count == 0 || kb.Edges == null || dats == null)

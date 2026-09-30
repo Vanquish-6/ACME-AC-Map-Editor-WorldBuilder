@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Reflection;
 using System.Text.Json;
 using Acme.Dat;
 using WorldBuilder.Shared.Lib;
@@ -124,6 +125,7 @@ namespace WorldBuilder.Editors.Dungeon {
             int totalLbiIds = lbiIds.Length;
             var scannedLandblocks = new HashSet<ushort>();
             for (int li = 0; li < totalLbiIds; li++) {
+                try {
                 var lbiId = lbiIds[li];
                 if (!dats.TryGet<LandBlockInfo>(lbiId, out var lbi) || lbi.NumCells == 0) continue;
                 bool hasBuildings = lbi.Buildings != null && lbi.Buildings.Count > 0;
@@ -150,17 +152,21 @@ namespace WorldBuilder.Editors.Dungeon {
 
                 // Include building-interior landblocks as well so provenance and
                 // landblock-level analysis reflect all dungeon sources.
-                if (cells.Count <= 120) {
+                if (cells.Count <= 220) {
                     ExtractPrefabs(cells, dats, lbKey, dungeonName ?? "", hasBuildings, buildingCount, allPrefabs, prefabSignatures);
                 }
 
-                if (cells.Count >= 3 && cells.Count <= 60 && templates.Count < 2000) {
-                    var tmpl = ExtractTemplate(cells, lbKey, dungeonName, hasBuildings, buildingCount, dats);
+                if (ShouldExtractTemplate(cells, hasBuildings, dungeonName)) {
+                    var tmpl = ExtractTemplate(cells, lbKey, dungeonName ?? "", hasBuildings, buildingCount, dats);
                     if (tmpl != null) templates.Add(tmpl);
                 }
 
                 if (dungeonsScanned % 500 == 0)
                     Console.WriteLine($"[DungeonKnowledge] Progress: {dungeonsScanned} dungeons, {edgeCounts.Count} edges, {allPrefabs.Count} prefabs");
+                }
+                catch (Exception ex) {
+                    Console.WriteLine($"[DungeonKnowledge] Landblock 0x{lbiIds[li] >> 16:X4} failed: {ex.GetType().Name}: {ex.Message}");
+                }
             }
 
             // Fallback: some dungeons are discoverable from location start-cell data even when
@@ -187,10 +193,10 @@ namespace WorldBuilder.Editors.Dungeon {
                 var dungeonName = entry.Name?.Trim() ?? "";
                 AccumulateRoomUsageAndStatics(cells, dungeonName, roomUsage, roomStaticsRaw);
                 ExtractAdjacencyEdges(cells, edgeCounts, dats);
-                if (cells.Count <= 120) {
+                if (cells.Count <= 220) {
                     ExtractPrefabs(cells, dats, lbKey, dungeonName, hasBuildings, buildingCount, allPrefabs, prefabSignatures);
                 }
-                if (cells.Count >= 3 && cells.Count <= 60 && templates.Count < 2000) {
+                if (ShouldExtractTemplate(cells, hasBuildings, dungeonName)) {
                     var tmpl = ExtractTemplate(cells, lbKey, dungeonName, hasBuildings, buildingCount, dats);
                     if (tmpl != null) templates.Add(tmpl);
                 }
@@ -236,10 +242,10 @@ namespace WorldBuilder.Editors.Dungeon {
 
                 AccumulateRoomUsageAndStatics(cells, resolvedName, roomUsage, roomStaticsRaw);
                 ExtractAdjacencyEdges(cells, edgeCounts, dats);
-                if (cells.Count <= 120) {
+                if (cells.Count <= 220) {
                     ExtractPrefabs(cells, dats, lbKey, resolvedName, hasBuildings, buildingCount, allPrefabs, prefabSignatures);
                 }
-                if (cells.Count >= 3 && cells.Count <= 60 && templates.Count < 2000) {
+                if (ShouldExtractTemplate(cells, hasBuildings, resolvedName)) {
                     var tmpl = ExtractTemplate(cells, lbKey, resolvedName, hasBuildings, buildingCount, dats);
                     if (tmpl != null) templates.Add(tmpl);
                 }
@@ -269,7 +275,7 @@ namespace WorldBuilder.Editors.Dungeon {
                 .GroupBy(p => p.Signature)
                 .Select(g => {
                     var best = g.OrderByDescending(x => x.Cells.Count).First();
-                    best.UsageCount = g.Count();
+                    best.UsageCount = prefabSignatures.TryGetValue(best.Signature, out var seen) ? seen : g.Count();
                     // Preserve full provenance for landblock-level analysis.
                     best.SourceLandblocks = g
                         .SelectMany(p => p.GetAllSourceLandblocks())
@@ -290,9 +296,10 @@ namespace WorldBuilder.Editors.Dungeon {
                     return best;
                 })
                 .Where(p => !IsBuildingOnlyPrefab(p))
-                .OrderByDescending(p => p.UsageCount)
-                .Take(3000)
                 .ToList();
+            uniquePrefabs = KeepPrefabVariety(uniquePrefabs);
+
+            templates = SelectBlueprints(templates);
 
             var catalog = BuildCatalog(roomUsage, dats);
             var roomStatics = BuildRoomStatics(roomStaticsRaw);
@@ -330,8 +337,52 @@ namespace WorldBuilder.Editors.Dungeon {
                 StyleThemes = styleThemes
             };
 
+            SanitizeForJson(kb);
             Save(kb);
             return kb;
+        }
+
+        /// <summary>
+        /// JSON cannot store NaN or infinity. A single bad portal rotation used to
+        /// fail the whole catalog save, so the editor rebuilt forever and then looked dead.
+        /// </summary>
+        private static void SanitizeForJson(object? obj, HashSet<object>? seen = null) {
+            if (obj == null) return;
+            seen ??= new HashSet<object>(ReferenceEqualityComparer.Instance);
+            if (!seen.Add(obj)) return;
+
+            var type = obj.GetType();
+            if (type == typeof(string) || type.IsPrimitive || type.IsEnum) return;
+            if (type.Namespace == null || !type.Namespace.StartsWith("WorldBuilder", StringComparison.Ordinal)) {
+                if (obj is System.Collections.IEnumerable nested && obj is not string) {
+                    foreach (var item in nested)
+                        SanitizeForJson(item, seen);
+                }
+                return;
+            }
+
+            float Component(string name) {
+                var p = type.GetProperty(name);
+                return p?.PropertyType == typeof(float) && p.GetValue(obj) is float v && float.IsFinite(v) ? v : 0f;
+            }
+
+            foreach (var prop in type.GetProperties(BindingFlags.Instance | BindingFlags.Public)) {
+                if (!prop.CanRead || !prop.CanWrite || prop.GetIndexParameters().Length > 0) continue;
+                if (prop.PropertyType == typeof(float)) {
+                    if (prop.GetValue(obj) is float v && !float.IsFinite(v))
+                        prop.SetValue(obj, prop.Name == "RotW" ? 1f : 0f);
+                }
+                else if (prop.PropertyType != typeof(string) && !prop.PropertyType.IsPrimitive && !prop.PropertyType.IsEnum) {
+                    SanitizeForJson(prop.GetValue(obj), seen);
+                }
+            }
+
+            var rotW = type.GetProperty("RotW");
+            if (rotW?.PropertyType == typeof(float) && rotW.CanWrite) {
+                float x = Component("RotX"), y = Component("RotY"), z = Component("RotZ"), w = Component("RotW");
+                if (x * x + y * y + z * z + w * w < 1e-8f)
+                    rotW.SetValue(obj, 1f);
+            }
         }
 
         private static uint[] GetDungeonLandblockIds(IDatReaderWriter dats) {
@@ -553,7 +604,10 @@ namespace WorldBuilder.Editors.Dungeon {
                     if (!edgeCounts.TryGetValue(key, out var existing)) {
                         var invCellRot = Quaternion.Conjugate(cell.Position.Orientation);
                         var relOffset = Vector3.Transform(otherCell.Position.Origin - cell.Position.Origin, invCellRot);
-                        var relRot = Quaternion.Normalize(invCellRot * otherCell.Position.Orientation);
+                        var relRot = invCellRot * otherCell.Position.Orientation;
+                        if (!IsUsableOffset(relOffset) || !IsUsableRotation(relRot))
+                            continue;
+                        relRot = Quaternion.Normalize(relRot);
 
                         var edge = new AdjacencyEdge {
                             EnvIdA = envA, CellStructA = csA, PolyIdA = (ushort)portal.PolygonId,
@@ -658,6 +712,12 @@ namespace WorldBuilder.Editors.Dungeon {
             height = maxZ - minZ;
         }
 
+        /// <summary>
+        /// Cut architectural modules out of a finished dungeon: corridor runs,
+        /// junction-plus-arms, dead-end stubs, and small whole layouts.
+        /// Random mid-dungeon slices are not useful blueprints — their open
+        /// faces point through the middle of a room that used to be there.
+        /// </summary>
         private static void ExtractPrefabs(
             Dictionary<ushort, EnvCell> cells,
             IDatReaderWriter dats,
@@ -668,8 +728,7 @@ namespace WorldBuilder.Editors.Dungeon {
             List<DungeonPrefab> allPrefabs,
             Dictionary<string, int> prefabSignatures) {
 
-            if (cells.Count < 2 || cells.Count > 120) return;
-            if (allPrefabs.Count > 200000) return;
+            if (cells.Count < 2 || cells.Count > 220) return;
 
             var adj = new Dictionary<ushort, List<(ushort neighbor, ushort myPoly, ushort theirPoly)>>();
             foreach (var (cellNum, cell) in cells) {
@@ -682,61 +741,151 @@ namespace WorldBuilder.Editors.Dungeon {
                 }
             }
 
+            var undirected = new Dictionary<ushort, HashSet<ushort>>();
+            foreach (var cn in cells.Keys)
+                undirected[cn] = new HashSet<ushort>();
+            foreach (var (cn, links) in adj) {
+                foreach (var (neighbor, _, _) in links) {
+                    if (!cells.ContainsKey(neighbor)) continue;
+                    undirected[cn].Add(neighbor);
+                    undirected[neighbor].Add(cn);
+                }
+            }
+
+            int Degree(ushort cn) => undirected.TryGetValue(cn, out var set) ? set.Count : 0;
+
             int perDungeonCount = 0;
-            int perDungeonCap = 50;
+            const int perDungeonCap = 28;
 
-            foreach (var (startCell, _) in cells) {
-                if (!adj.TryGetValue(startCell, out var neighbors)) continue;
+            void Emit(ushort[] nums, int maxSigCount, int maxOpenFaces) {
+                if (perDungeonCount >= perDungeonCap || nums.Length < 2) return;
+                TryAddPrefab(cells, dats, adj, nums, sourceLandblock, dungeonName,
+                    sourceHasBuildings, sourceBuildingCount, allPrefabs, prefabSignatures,
+                    maxSigCount, maxOpenFaces, ref perDungeonCount);
+            }
+
+            var visitedCorridor = new HashSet<ushort>();
+            foreach (var start in cells.Keys.OrderBy(k => k)) {
                 if (perDungeonCount >= perDungeonCap) break;
-
-                foreach (var (n1, _, _) in neighbors) {
-                    if (perDungeonCount >= perDungeonCap) break;
-                    TryAddPrefab(cells, dats, adj, new[] { startCell, n1 }, sourceLandblock, dungeonName,
-                        sourceHasBuildings, sourceBuildingCount, allPrefabs, prefabSignatures, 20, ref perDungeonCount);
-
-                    if (!adj.TryGetValue(n1, out var n1Neighbors)) continue;
-                    foreach (var (n2, _, _) in n1Neighbors) {
-                        if (n2 == startCell) continue;
-                        if (perDungeonCount >= perDungeonCap) break;
-                        TryAddPrefab(cells, dats, adj, new[] { startCell, n1, n2 }, sourceLandblock, dungeonName,
-                            sourceHasBuildings, sourceBuildingCount, allPrefabs, prefabSignatures, 10, ref perDungeonCount);
-                    }
+                if (Degree(start) != 2 || !visitedCorridor.Add(start)) continue;
+                var chain = CollectDegree2Chain(start, undirected, visitedCorridor);
+                if (chain.Count < 2) continue;
+                for (int i = 0; i < chain.Count && perDungeonCount < perDungeonCap; i += 3) {
+                    int len = Math.Min(4, chain.Count - i);
+                    if (len < 2) break;
+                    Emit(chain.Skip(i).Take(len).ToArray(), 8, 4);
+                    if (i + len >= chain.Count) break;
                 }
             }
 
-            foreach (var (startCell, _) in cells) {
-                if (!adj.TryGetValue(startCell, out var neighbors)) continue;
+            foreach (var hub in cells.Keys.OrderBy(k => k)) {
                 if (perDungeonCount >= perDungeonCap) break;
+                if (!undirected.TryGetValue(hub, out var nbrs) || nbrs.Count < 3) continue;
+                var cluster = new List<ushort> { hub };
+                foreach (var n in nbrs.OrderBy(n => n)) {
+                    if (cluster.Count >= 7) break;
+                    cluster.Add(n);
+                }
+                Emit(cluster.ToArray(), 6, 6);
+            }
 
-                foreach (var (n1, _, _) in neighbors) {
-                    if (perDungeonCount >= perDungeonCap) break;
-                    var chain = new List<ushort> { startCell, n1 };
-                    var visited = new HashSet<ushort> { startCell, n1 };
+            int stubs = 0;
+            foreach (var leaf in cells.Keys.OrderBy(k => k)) {
+                if (perDungeonCount >= perDungeonCap || stubs >= 6) break;
+                if (!undirected.TryGetValue(leaf, out var nbrs) || nbrs.Count != 1) continue;
+                var parent = nbrs.First();
+                if (Degree(parent) < 2) continue;
+                Emit(new[] { parent, leaf }, 6, 4);
+                stubs++;
+            }
 
-                    for (int step = 0; step < 4 && perDungeonCount < perDungeonCap; step++) {
-                        var last = chain[^1];
-                        if (!adj.TryGetValue(last, out var lastNeighbors)) break;
+            if (cells.Count >= 4 && cells.Count <= 18 && IsConnected(cells.Keys, undirected)) {
+                Emit(cells.Keys.OrderBy(k => k).ToArray(), 2, 12);
+            }
+        }
 
-                        var next = lastNeighbors.FirstOrDefault(n => !visited.Contains(n.neighbor));
-                        if (next.neighbor == 0 && !cells.ContainsKey(0)) break;
-                        if (visited.Contains(next.neighbor)) break;
+        private static List<ushort> CollectDegree2Chain(
+            ushort start,
+            Dictionary<ushort, HashSet<ushort>> undirected,
+            HashSet<ushort> visited) {
 
-                        chain.Add(next.neighbor);
-                        visited.Add(next.neighbor);
+            int Degree(ushort cn) => undirected.TryGetValue(cn, out var set) ? set.Count : 0;
 
-                        if (chain.Count >= 4) {
-                            TryAddPrefab(cells, dats, adj, chain.ToArray(), sourceLandblock, dungeonName,
-                                sourceHasBuildings, sourceBuildingCount, allPrefabs, prefabSignatures, 5, ref perDungeonCount);
-                        }
+            ushort Walk(ushort from, ushort previous) {
+                ushort cur = from;
+                ushort prev = previous;
+                var seen = new HashSet<ushort>();
+                while (Degree(cur) == 2 && seen.Add(cur)) {
+                    if (!undirected.TryGetValue(cur, out var nbrs)) break;
+                    ushort? next = null;
+                    foreach (var n in nbrs) {
+                        if (n == prev || Degree(n) != 2) continue;
+                        next = n;
+                        break;
                     }
+                    if (next == null) break;
+                    prev = cur;
+                    cur = next.Value;
+                }
+                return cur;
+            }
+
+            ushort end = Walk(start, 0);
+            var chain = new List<ushort>();
+            ushort prevCell = 0;
+            ushort cursor = end;
+            var guard = new HashSet<ushort>();
+            while (Degree(cursor) == 2 && guard.Add(cursor)) {
+                visited.Add(cursor);
+                chain.Add(cursor);
+                if (!undirected.TryGetValue(cursor, out var nbrs)) break;
+                ushort? next = null;
+                foreach (var n in nbrs) {
+                    if (n == prevCell || Degree(n) != 2) continue;
+                    next = n;
+                    break;
+                }
+                if (next == null) break;
+                prevCell = cursor;
+                cursor = next.Value;
+            }
+            return chain;
+        }
+
+        private static bool IsConnected(IEnumerable<ushort> cellNums, Dictionary<ushort, HashSet<ushort>> undirected) {
+            var all = cellNums as ICollection<ushort> ?? cellNums.ToList();
+            if (all.Count == 0) return false;
+            var seen = new HashSet<ushort>();
+            var q = new Queue<ushort>();
+            var start = all.First();
+            q.Enqueue(start);
+            seen.Add(start);
+            while (q.Count > 0) {
+                var cur = q.Dequeue();
+                if (!undirected.TryGetValue(cur, out var nbrs)) continue;
+                foreach (var n in nbrs) {
+                    if (!all.Contains(n) || !seen.Add(n)) continue;
+                    q.Enqueue(n);
                 }
             }
+            return seen.Count == all.Count;
+        }
 
-            if (cells.Count >= 5 && cells.Count <= 15) {
-                var allCellNums = cells.Keys.ToArray();
-                TryAddPrefab(cells, dats, adj, allCellNums, sourceLandblock, dungeonName,
-                    sourceHasBuildings, sourceBuildingCount, allPrefabs, prefabSignatures, 1, ref perDungeonCount);
-            }
+        private static List<DungeonPrefab> KeepPrefabVariety(List<DungeonPrefab> prefabs) {
+            var large = prefabs
+                .Where(p => p.Cells.Count >= 5)
+                .OrderByDescending(p => p.UsageCount)
+                .ThenByDescending(p => p.Cells.Count)
+                .Take(600)
+                .ToList();
+            var kept = new HashSet<string>(large.Select(p => p.Signature));
+            var rest = prefabs
+                .Where(p => !kept.Contains(p.Signature))
+                .OrderByDescending(p => p.UsageCount)
+                .ThenBy(p => p.Cells.Count)
+                .Take(2400);
+            large.AddRange(rest);
+            return large;
         }
 
         private static void TryAddPrefab(
@@ -745,23 +894,25 @@ namespace WorldBuilder.Editors.Dungeon {
             ushort[] cellNums, ushort sourceLandblock, string dungeonName,
             bool sourceHasBuildings, int sourceBuildingCount,
             List<DungeonPrefab> allPrefabs, Dictionary<string, int> prefabSignatures,
-            int maxSigCount, ref int perDungeonCount) {
+            int maxSigCount, int maxOpenFaces, ref int perDungeonCount) {
 
-            if (allPrefabs.Count > 200000) return;
             var prefab = BuildPrefab(cells, dats, adj, cellNums, sourceLandblock);
             if (prefab == null) return;
+            if (prefab.InternalPortals.Count < prefab.Cells.Count - 1) return;
+            if (prefab.OpenFaces.Count == 0 || prefab.OpenFaces.Count > maxOpenFaces) return;
+
             prefab.SourceDungeonName = dungeonName;
             prefab.SourceHasBuildings = sourceHasBuildings;
             prefab.SourceBuildingCount = sourceBuildingCount;
             if (sourceHasBuildings && sourceLandblock != 0 && !prefab.SourceBuildingLinkedLandblocks.Contains(sourceLandblock))
                 prefab.SourceBuildingLinkedLandblocks.Add(sourceLandblock);
 
-            prefabSignatures.TryGetValue(prefab.Signature, out var sigCount);
-            if (sigCount < maxSigCount) {
+            bool known = prefabSignatures.TryGetValue(prefab.Signature, out var sigCount);
+            if (!known && prefabSignatures.Count >= 12000) return;
+            prefabSignatures[prefab.Signature] = sigCount + 1;
+            perDungeonCount++;
+            if (sigCount < maxSigCount && allPrefabs.Count < 16000)
                 allPrefabs.Add(prefab);
-                prefabSignatures[prefab.Signature] = sigCount + 1;
-                perDungeonCount++;
-            }
         }
 
         private static DungeonPrefab? BuildPrefab(
@@ -822,11 +973,9 @@ namespace WorldBuilder.Editors.Dungeon {
                             env.Cells.TryGetValue((ushort)ec.CellStructure, out var cs)) {
                             var geom = PortalSnapper.GetPortalGeometry(cs, myPoly);
                             if (geom != null) {
-                                var cellRot = Quaternion.Normalize(new Quaternion(
-                                    prefab.Cells[myIdx].RotX, prefab.Cells[myIdx].RotY,
-                                    prefab.Cells[myIdx].RotZ, prefab.Cells[myIdx].RotW));
-                                var worldNormal = Vector3.Transform(geom.Value.Normal, cellRot);
-                                nx = worldNormal.X; ny = worldNormal.Y; nz = worldNormal.Z;
+                                nx = geom.Value.Normal.X;
+                                ny = geom.Value.Normal.Y;
+                                nz = geom.Value.Normal.Z;
                             }
                         }
 
@@ -840,14 +989,37 @@ namespace WorldBuilder.Editors.Dungeon {
                 }
             }
 
-            var sig = string.Join("|",
-                prefab.Cells.OrderBy(c => c.EnvId).ThenBy(c => c.CellStruct)
-                    .Select(c => $"{c.EnvId:X4}_{c.CellStruct}")) +
-                $"_P{prefab.InternalPortals.Count}_O{prefab.OpenFaces.Count}";
-            prefab.Signature = sig;
+            var links = prefab.InternalPortals.Select(ip => {
+                var a = prefab.Cells[ip.CellIndexA];
+                var b = prefab.Cells[ip.CellIndexB];
+                string left = $"{a.EnvId:X4}_{a.CellStruct}:{ip.PolyIdA}";
+                string right = $"{b.EnvId:X4}_{b.CellStruct}:{ip.PolyIdB}";
+                return string.CompareOrdinal(left, right) <= 0 ? left + ">" + right : right + ">" + left;
+            }).OrderBy(s => s, StringComparer.Ordinal);
+            var opens = prefab.OpenFaces
+                .Select(of => $"{of.EnvId:X4}_{of.CellStruct}:{of.PolyId}")
+                .OrderBy(s => s, StringComparer.Ordinal);
+            prefab.Signature = string.Join("|", links) + "#O" + string.Join(",", opens);
 
             if (prefab.Cells.Count < 2) return null;
+            foreach (var cell in prefab.Cells) {
+                if (!IsUsableOffset(cell.OffsetX, cell.OffsetY, cell.OffsetZ)) return null;
+                if (!IsUsableRotation(cell.RotX, cell.RotY, cell.RotZ, cell.RotW)) return null;
+            }
             return prefab;
+        }
+
+        private static bool IsUsableOffset(Vector3 v) => IsUsableOffset(v.X, v.Y, v.Z);
+
+        private static bool IsUsableOffset(float x, float y, float z) =>
+            float.IsFinite(x) && float.IsFinite(y) && float.IsFinite(z);
+
+        private static bool IsUsableRotation(Quaternion q) => IsUsableRotation(q.X, q.Y, q.Z, q.W);
+
+        private static bool IsUsableRotation(float x, float y, float z, float w) {
+            if (!float.IsFinite(x) || !float.IsFinite(y) || !float.IsFinite(z) || !float.IsFinite(w))
+                return false;
+            return x * x + y * y + z * z + w * w > 1e-6f;
         }
 
         /// <summary>
@@ -886,17 +1058,81 @@ namespace WorldBuilder.Editors.Dungeon {
             return result;
         }
 
+        private static bool ShouldExtractTemplate(Dictionary<ushort, EnvCell> cells, bool hasBuildings, string? dungeonName) {
+            if (cells.Count < 4 || cells.Count > 220) return false;
+            // Unnamed building interiors are houses, not dungeon blueprints.
+            if (hasBuildings && string.IsNullOrWhiteSpace(dungeonName) && cells.Count < 10) return false;
+            return true;
+        }
+
+        private static bool IsOutsideCellLink(ushort other, Dictionary<ushort, EnvCell> cells) =>
+            other == 0 || other == ushort.MaxValue || other < 0x0100 || !cells.ContainsKey(other);
+
         /// <summary>
-        /// Extract a complete dungeon blueprint -- positions, orientations, portal
-        /// connections, surfaces, and graph structure. This is enough data to
-        /// reconstruct the dungeon exactly or to re-skin it with different room types.
+        /// Extract one connected dungeon blueprint. Positions are relative to the
+        /// entrance (the cell that opens outside), not the lowest cell number.
         /// </summary>
         private static DungeonTemplate? ExtractTemplate(
             Dictionary<ushort, EnvCell> cells, ushort sourceLandblock, string dungeonName,
             bool sourceHasBuildings, int sourceBuildingCount,
             IDatReaderWriter dats) {
 
-            var cellNums = cells.Keys.OrderBy(k => k).ToList();
+            var undirected = new Dictionary<ushort, HashSet<ushort>>();
+            foreach (var cn in cells.Keys)
+                undirected[cn] = new HashSet<ushort>();
+            foreach (var (cn, ec) in cells) {
+                if (ec.CellPortals == null) continue;
+                foreach (var portal in ec.CellPortals) {
+                    if (IsOutsideCellLink(portal.OtherCellId, cells)) continue;
+                    undirected[cn].Add(portal.OtherCellId);
+                    if (undirected.TryGetValue(portal.OtherCellId, out var back))
+                        back.Add(cn);
+                }
+            }
+
+            var remaining = new HashSet<ushort>(cells.Keys);
+            List<ushort>? bestComponent = null;
+            while (remaining.Count > 0) {
+                var start = remaining.First();
+                var comp = new List<ushort>();
+                var q = new Queue<ushort>();
+                q.Enqueue(start);
+                remaining.Remove(start);
+                while (q.Count > 0) {
+                    var cur = q.Dequeue();
+                    comp.Add(cur);
+                    if (!undirected.TryGetValue(cur, out var nbrs)) continue;
+                    foreach (var n in nbrs) {
+                        if (!remaining.Remove(n)) continue;
+                        q.Enqueue(n);
+                    }
+                }
+                if (bestComponent == null || comp.Count > bestComponent.Count)
+                    bestComponent = comp;
+            }
+
+            if (bestComponent == null || bestComponent.Count < 4) return null;
+            if (bestComponent.Count < cells.Count * 0.6f && bestComponent.Count < 8) return null;
+
+            var component = new HashSet<ushort>(bestComponent);
+            int OutsideCount(ushort cn) {
+                var ec = cells[cn];
+                if (ec.CellPortals == null) return 0;
+                int n = 0;
+                foreach (var portal in ec.CellPortals)
+                    if (IsOutsideCellLink(portal.OtherCellId, cells)) n++;
+                return n;
+            }
+
+            ushort entryCell = bestComponent
+                .OrderByDescending(OutsideCount)
+                .ThenByDescending(cn => undirected[cn].Count)
+                .ThenBy(cn => cn)
+                .First();
+
+            var cellNums = new List<ushort> { entryCell };
+            cellNums.AddRange(bestComponent.Where(cn => cn != entryCell).OrderBy(cn => cn));
+
             var indexMap = new Dictionary<ushort, int>();
             for (int i = 0; i < cellNums.Count; i++)
                 indexMap[cellNums[i]] = i;
@@ -907,36 +1143,37 @@ namespace WorldBuilder.Editors.Dungeon {
             var connections = new List<TemplateConnection>();
             var drawnEdges = new HashSet<(int, int)>();
 
-            foreach (var (cn, ec) in cells) {
+            foreach (var cn in cellNums) {
+                var ec = cells[cn];
                 if (ec.CellPortals == null) continue;
                 int myIdx = indexMap[cn];
                 foreach (var portal in ec.CellPortals) {
+                    if (!component.Contains(portal.OtherCellId)) continue;
                     if (!indexMap.TryGetValue(portal.OtherCellId, out int otherIdx)) continue;
                     if (!adj[myIdx].Contains(otherIdx)) adj[myIdx].Add(otherIdx);
+                    if (!adj[otherIdx].Contains(myIdx)) adj[otherIdx].Add(myIdx);
 
                     var edgeKey = (Math.Min(myIdx, otherIdx), Math.Max(myIdx, otherIdx));
-                    if (drawnEdges.Add(edgeKey)) {
-                        ushort resolvedOtherPoly = (ushort)portal.OtherPortalId;
-                        if (cells.TryGetValue(portal.OtherCellId, out var otherCellForResolve))
-                            resolvedOtherPoly = ResolveOtherPortalId(portal, otherCellForResolve, dats);
-                        connections.Add(new TemplateConnection {
-                            NodeA = myIdx,
-                            PolyIdA = (ushort)portal.PolygonId,
-                            NodeB = otherIdx,
-                            PolyIdB = resolvedOtherPoly
-                        });
-                    }
+                    if (!drawnEdges.Add(edgeKey)) continue;
+                    ushort resolvedOtherPoly = (ushort)portal.OtherPortalId;
+                    if (cells.TryGetValue(portal.OtherCellId, out var otherCellForResolve))
+                        resolvedOtherPoly = ResolveOtherPortalId(portal, otherCellForResolve, dats);
+                    connections.Add(new TemplateConnection {
+                        NodeA = myIdx,
+                        PolyIdA = (ushort)portal.PolygonId,
+                        NodeB = otherIdx,
+                        PolyIdB = resolvedOtherPoly
+                    });
                 }
             }
 
-            // BFS to compute depth and detect graph type
+            if (connections.Count < cellNums.Count - 1) return null;
+
             var visited = new HashSet<int>();
             var queue = new Queue<(int node, int depth)>();
             queue.Enqueue((0, 0));
             visited.Add(0);
             int maxDepth = 0;
-            int branchCount = 0;
-
             while (queue.Count > 0) {
                 var (node, depth) = queue.Dequeue();
                 if (depth > maxDepth) maxDepth = depth;
@@ -944,25 +1181,22 @@ namespace WorldBuilder.Editors.Dungeon {
                     if (visited.Add(n)) queue.Enqueue((n, depth + 1));
                 }
             }
+            if (visited.Count != cellNums.Count) return null;
 
-            foreach (var (_, neighbors) in adj) {
-                if (neighbors.Count >= 3) branchCount++;
-            }
-
-            bool hasCycles = cells.Values.Sum(c => c.CellPortals?.Count ?? 0) / 2 > cellNums.Count - 1;
+            int branchCount = adj.Values.Count(neighbors => neighbors.Count >= 3);
+            bool hasCycles = connections.Count > cellNums.Count - 1;
             string graphType = hasCycles ? "Complex" : branchCount == 0 ? "Linear" : "Tree";
 
-            // Store positions relative to the first cell so templates are origin-independent
-            var firstCell = cells[cellNums[0]];
-            var originPos = firstCell.Position.Origin;
-            var originRot = firstCell.Position.Orientation;
+            var entry = cells[entryCell];
+            var originPos = entry.Position.Origin;
+            var originRot = entry.Position.Orientation;
             var invRot = Quaternion.Conjugate(originRot);
 
             var nodes = new List<TemplateNode>();
             for (int i = 0; i < cellNums.Count; i++) {
                 var ec = cells[cellNums[i]];
                 int degree = adj[i].Count;
-                string role = degree == 0 ? "Isolated" : degree == 1 ? "DeadEnd" : degree == 2 ? "Corridor" : "Junction";
+                string role = degree <= 1 ? "DeadEnd" : degree == 2 ? "Corridor" : "Junction";
                 if (i == 0) role = "Entry";
 
                 var relPos = Vector3.Transform(ec.Position.Origin - originPos, invRot);
@@ -974,28 +1208,63 @@ namespace WorldBuilder.Editors.Dungeon {
                     CellStruct = (ushort)ec.CellStructure,
                     PortalCount = ec.CellPortals?.Count ?? 0,
                     Role = role,
-                    ConnectedTo = adj[i],
+                    ConnectedTo = adj[i].ToList(),
                     OffsetX = relPos.X, OffsetY = relPos.Y, OffsetZ = relPos.Z,
                     RotX = relRot.X, RotY = relRot.Y, RotZ = relRot.Z, RotW = relRot.W,
                     Surfaces = ec.Surfaces?.Select(s => (ushort)s).ToList() ?? new List<ushort>()
                 });
             }
 
-            string style = PrefabNamer.InferStyle(dungeonName);
+            foreach (var node in nodes) {
+                if (!IsUsableOffset(node.OffsetX, node.OffsetY, node.OffsetZ)) return null;
+                if (!IsUsableRotation(node.RotX, node.RotY, node.RotZ, node.RotW)) return null;
+            }
 
             return new DungeonTemplate {
                 SourceLandblock = sourceLandblock,
                 SourceHasBuildings = sourceHasBuildings,
                 SourceBuildingCount = sourceBuildingCount,
-                DungeonName = dungeonName,
-                Style = style,
+                DungeonName = dungeonName ?? "",
+                Style = PrefabNamer.InferStyle(dungeonName ?? ""),
                 CellCount = cellNums.Count,
                 GraphType = graphType,
                 MaxDepth = maxDepth,
                 BranchCount = branchCount,
+                EntryIndex = 0,
                 Nodes = nodes,
                 Connections = connections
             };
+        }
+
+        /// <summary>
+        /// Keep a spread of sizes, styles, and shapes instead of the first
+        /// couple thousand landblocks the scanner happened to hit.
+        /// </summary>
+        private static List<DungeonTemplate> SelectBlueprints(List<DungeonTemplate> raw) {
+            static int Bucket(int count) => count switch {
+                <= 12 => 0,
+                <= 24 => 1,
+                <= 48 => 2,
+                <= 96 => 3,
+                _ => 4
+            };
+
+            var selected = new List<DungeonTemplate>();
+            foreach (var group in raw.GroupBy(t => (t.Style, Bucket(t.CellCount), t.GraphType))) {
+                selected.AddRange(group
+                    .OrderByDescending(t => string.IsNullOrWhiteSpace(t.DungeonName) ? 0 : 1)
+                    .ThenByDescending(t => t.MaxDepth)
+                    .ThenByDescending(t => t.CellCount)
+                    .Take(6));
+            }
+
+            return selected
+                .GroupBy(t => t.SourceLandblock)
+                .Select(g => g.OrderByDescending(t => t.CellCount).First())
+                .OrderByDescending(t => string.IsNullOrWhiteSpace(t.DungeonName) ? 0 : 1)
+                .ThenByDescending(t => t.CellCount)
+                .Take(500)
+                .ToList();
         }
 
         /// <summary>

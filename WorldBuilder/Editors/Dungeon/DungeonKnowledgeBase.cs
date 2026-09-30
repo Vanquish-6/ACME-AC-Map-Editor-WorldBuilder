@@ -6,7 +6,7 @@ namespace WorldBuilder.Editors.Dungeon {
 
     public class DungeonKnowledgeBase {
         /// <summary>Increment when the edge/prefab data format changes to trigger auto-rebuild.</summary>
-        public const int CurrentVersion = 14;
+        public const int CurrentVersion = 15;
         public int Version { get; set; }
         public DateTime AnalyzedAt { get; set; }
         public int DungeonsScanned { get; set; }

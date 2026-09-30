@@ -39,6 +39,9 @@ namespace WorldBuilder.Editors.Dungeon {
         /// <summary>True when this prefab is compatible with currently open portals.</summary>
         public bool IsCompatible { get; set; }
 
+        [ObservableProperty]
+        private bool _showRemove;
+
         /// <summary>Roof status for display: "Roofed", "Partial Roof", "No Roof".</summary>
         public string RoofStatus {
             get {

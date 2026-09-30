@@ -83,8 +83,11 @@ namespace WorldBuilder.Editors.Dungeon.Views {
                 }
             }
 
-            if (entry != null && DataContext is RoomPaletteViewModel vm)
+            if (entry != null && DataContext is RoomPaletteViewModel vm) {
                 vm.TogglePrefabFavorite(entry);
+                _pressEntry = null;
+                e.Handled = true;
+            }
         }
     }
 }
