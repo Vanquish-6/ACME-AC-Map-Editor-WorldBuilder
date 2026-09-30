@@ -5,6 +5,26 @@
     <description>Most recent changes with links to updates</description>
     <language>en</language>
     <item>
+      <title>ACME WorldBuilder 0.1.0</title>
+      <description>### 📋 Changelog
+## Changes
+
+- Push landblocks to a live server through the World Patch API. ([336f540](https://github.com/Vanquish-6/ACME-AC-Map-Editor-WorldBuilder/commit/336f540b31540772d744b66ab026c46612f0ab7c))
+- Add the Monster Builder: import OBJ models as creature Setups. ([fd1df02](https://github.com/Vanquish-6/ACME-AC-Map-Editor-WorldBuilder/commit/fd1df02033af25cc4784d259a430249fa953b905))
+- Dungeon editor: generate from retail blueprints, stitch meeting doors, fix palette favorites. ([651291a](https://github.com/Vanquish-6/ACME-AC-Map-Editor-WorldBuilder/commit/651291a8ae142d84504054b5aaceba14db185192))
+- Replace the intro and connection-screen backgrounds from the Layout editor. ([9609751](https://github.com/Vanquish-6/ACME-AC-Map-Editor-WorldBuilder/commit/9609751511c08a144d7e9ad7349bba40c332bdcd))
+- Make legacy pre-ToD projects editable and export same-size cell.dat and portal.dat. ([e086f05](https://github.com/Vanquish-6/ACME-AC-Map-Editor-WorldBuilder/commit/e086f0504265cb49a0398543740e17530e9a4d1e))
+- Hydrate BSP trees when loading GfxObj and CellStruct records. ([394364c](https://github.com/Vanquish-6/ACME-AC-Map-Editor-WorldBuilder/commit/394364c710b2613f56a385803f0ced01803d39bf))
+- Update export-public-repo.ps1 with GitHub instructions ([a581a5a](https://github.com/Vanquish-6/ACME-AC-Map-Editor-WorldBuilder/commit/a581a5a1c77a9b12ecabe03e67084c5fc7bbdc03))
+- Ignore leftover extract folders in the public tree. ([dc76cb9](https://github.com/Vanquish-6/ACME-AC-Map-Editor-WorldBuilder/commit/dc76cb9e5afb10274a9ad1a6e2e74e4bc8c5f298))
+- Initial public ACME WorldBuilder. ([01ebc1f](https://github.com/Vanquish-6/ACME-AC-Map-Editor-WorldBuilder/commit/01ebc1f2f80081d090016fa9dd94f68cc620ee31))</description>
+      <pubDate>Wed, 30 Sep 2026 06:08:49 +00:00</pubDate>
+      <sparkle:version>0.1.0</sparkle:version>
+      <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
+      <sparkle:channel>stable</sparkle:channel>
+      <enclosure url="https://github.com/Vanquish-6/ACME-AC-Map-Editor-WorldBuilder/releases/download/v0.1.0/ACME-WorldBuilderInstall-0.1.0.exe" sparkle:version="0.1.0" sparkle:shortVersionString="0.1.0" length="24143552" sparkle:os="windows-x64" type="application/x-msdos-program" sparkle:criticalUpdate="false" sparkle:signature="bXiwrgyqVXMKtVSsaoliwJb/lkhBAjSeIvN4mgTEW2v2QIU+Pj55RXY1g5FeAVzvnq1aXySnHBFEJhhRSzuyBQ==" />
+    </item>
+    <item>
       <title>ACME WorldBuilder 0.1.0+3</title>
       <description>## Changes
 
@@ -15,7 +35,7 @@
       <sparkle:version>0.1.0+3</sparkle:version>
       <sparkle:shortVersionString>0.1.0</sparkle:shortVersionString>
       <sparkle:channel>edge</sparkle:channel>
-      <enclosure url="https://github.com/Vanquish-6/ACME-AC-Map-Editor-WorldBuilder/releases/download/latest/ACME-WorldBuilderInstall-0.1.0%2B3.exe" sparkle:version="0.1.0+3" sparkle:shortVersionString="0.1.0" length="23879032" sparkle:os="windows-x64" type="application/x-msdos-program" sparkle:criticalUpdate="false" sparkle:signature="DGJ3ON9L/KHFuP/CjpLzHna6SuchWVfdG+xP7qXWX2rKJhbSchAtlSSt8iq/OP8G5u31tvMl3G//M8UQS0ybBg==" />
+      <enclosure url="https://github.com/Vanquish-6/ACME-AC-Map-Editor-WorldBuilder/releases/download/latest/ACME-WorldBuilderInstall-0.1.0%2B3.exe" sparkle:version="0.1.0+3" sparkle:shortVersionString="0.1.0" length="23879032" sparkle:os="windows-x64" type="application/octet-stream" sparkle:criticalUpdate="false" sparkle:signature="DGJ3ON9L/KHFuP/CjpLzHna6SuchWVfdG+xP7qXWX2rKJhbSchAtlSSt8iq/OP8G5u31tvMl3G//M8UQS0ybBg==" />
     </item>
   </channel>
 </rss>
