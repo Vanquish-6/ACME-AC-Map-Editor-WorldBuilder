@@ -30,16 +30,30 @@
 
     <DockPanel>
         <!-- Status bar -->
-        <Border DockPanel.Dock="Top" Background="#120c22" BorderBrush="#2a1d42" BorderThickness="0,0,0,1" Padding="8,4">
-            <DockPanel LastChildFill="True">
-                <Button DockPanel.Dock="Right" Content="Save layout to project"
-                        Command="{Binding SaveLayoutToProjectCommand}"
-                        Padding="12,4" FontSize="11" Margin="12,0,0,0"
-                        ToolTip.Tip="Stores the current layout in the project (ui_layouts). Export DATs to write client_local_English.dat." />
-                <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="#8a7a9e"
-                           VerticalAlignment="Center" TextWrapping="Wrap" />
-            </DockPanel>
-        </Border>
+        <StackPanel DockPanel.Dock="Top">
+            <Border Background="#120c22" BorderBrush="#2a1d42" BorderThickness="0,0,0,1" Padding="8,4">
+                <DockPanel LastChildFill="True">
+                    <Button DockPanel.Dock="Right" Content="Save layout to project"
+                            Command="{Binding SaveLayoutToProjectCommand}"
+                            Padding="12,4" FontSize="11" Margin="12,0,0,0"
+                            ToolTip.Tip="Stores the current layout in the project (ui_layouts). Export DATs to write client_local_English.dat." />
+                    <TextBlock Text="{Binding StatusText}" FontSize="12" Foreground="#8a7a9e"
+                               VerticalAlignment="Center" TextWrapping="Wrap" />
+                </DockPanel>
+            </Border>
+            <Border Background="#120c22" BorderBrush="#2a1d42" BorderThickness="0,0,0,1" Padding="8,4">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="Replace intro background…"
+                            Command="{Binding ReplaceIntroBackgroundCommand}"
+                            Padding="10,4" FontSize="11"
+                            ToolTip.Tip="Retail: replaces 0x06001343 (800×482) and writes it on DAT export. Legacy: replaces intro stills 0x06001B14–0x06001B16. File → Export DATs writes portal.dat, and the project's legacy-edit folder is updated too." />
+                    <Button Content="Replace connection background…"
+                            Command="{Binding ReplaceConnectionBackgroundCommand}"
+                            Padding="10,4" FontSize="11"
+                            ToolTip.Tip="Retail: replaces JPEG stills 0x0600610F and 0x06006EBC. Legacy: replaces 0x06001343 (800×482). File → Export DATs writes portal.dat, and the project's legacy-edit folder is updated too. The movie file is not in the DAT." />
+                </StackPanel>
+            </Border>
+        </StackPanel>
 
         <Grid ColumnDefinitions="220,1,360,1,*">
 
@@ -226,9 +240,9 @@
                                     <Button Content="Replace image (in-place)…"
                                             Command="{Binding SelectedDetail.ReplaceUiRenderSurfaceCommand}"
                                             Padding="10,4" FontSize="11"
-                                            ToolTip.Tip="Requires the primary image to resolve to an existing portal RenderSurface (usually 0x06……). Writes with a temporary read/write DAT connection (base client folder must be writable). Check the console for [TextureImport] Replace UI texture lines. Preview updates from your file after save." />
+                                            ToolTip.Tip="Replaces the selected element's portal RenderSurface in place. Supports A8R8G8B8, R8G8B8, and JPEG. The image is resized to the existing frame and written on DAT export." />
                                 </StackPanel>
-                                <TextBlock Text="Hex: Apply points the element at an id; Add appends template media. In-place replace works only for existing 0x06…… RenderSurfaces — inserting new portal textures can corrupt client_portal.dat."
+                                <TextBlock Text="Hex: Apply points the element at an id; Add appends template media. In-place replace works for existing 0x06…… RenderSurfaces in A8R8G8B8, R8G8B8, or JPEG. Use the intro and connection buttons for those full-screen backgrounds."
                                            FontSize="10" Foreground="#6a5a7e" TextWrapping="Wrap" Margin="0,0,0,4" />
 
                                 <TextBlock Classes="section-header" Text="Inheritance" />

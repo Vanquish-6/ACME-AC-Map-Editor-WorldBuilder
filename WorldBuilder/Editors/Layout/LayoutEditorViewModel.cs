@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.Input;
 using Acme.Dat;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Linq;
@@ -54,6 +55,8 @@ namespace WorldBuilder.Editors.Layout {
             _portalDoc = project.DocumentManager.GetOrCreateDocumentAsync<PortalDatDocument>(PortalDatDocument.DocumentId).GetAwaiter().GetResult();
             LoadLayoutIds();
             SaveLayoutToProjectCommand.NotifyCanExecuteChanged();
+            ReplaceIntroBackgroundCommand.NotifyCanExecuteChanged();
+            ReplaceConnectionBackgroundCommand.NotifyCanExecuteChanged();
         }
 
         private void LoadLayoutIds() {
@@ -61,10 +64,15 @@ namespace WorldBuilder.Editors.Layout {
 
             try {
                 _allLayoutIds = _dats.GetAllIdsOfType<LayoutDesc>().OrderBy(id => id).ToArray();
-                StatusText = $"Found {_allLayoutIds.Length} UI layouts";
+                StatusText = _project?.DatMode == DatProjectMode.LegacyPreTod && _allLayoutIds.Length == 0
+                    ? "Legacy portal.dat has no retail UI layouts. Use the intro and connection buttons above. File → Export DATs writes portal.dat, and the project's legacy-edit folder is updated too."
+                    : $"Found {_allLayoutIds.Length} UI layouts";
             }
             catch (Exception ex) {
-                StatusText = $"Failed to load layout IDs: {ex.Message}";
+                _allLayoutIds = Array.Empty<uint>();
+                StatusText = _project?.DatMode == DatProjectMode.LegacyPreTod
+                    ? "Use the intro and connection buttons above. File → Export DATs writes portal.dat, and the project's legacy-edit folder is updated too."
+                    : $"Failed to load layout IDs: {ex.Message}";
                 Console.WriteLine($"[Layout] Error: {ex}");
             }
 
@@ -152,6 +160,117 @@ namespace WorldBuilder.Editors.Layout {
         }
 
         private bool CanSaveLayoutToProject() => SelectedDetail != null && _layoutDoc != null;
+
+        bool CanReplaceScreenBackground() => _textureImport != null && _dats != null && _portalDoc != null;
+
+        [RelayCommand(CanExecute = nameof(CanReplaceScreenBackground))]
+        private Task ReplaceIntroBackgroundAsync() =>
+            ReplaceScreenBackgroundAsync("Replace intro screen background", intro: true);
+
+        [RelayCommand(CanExecute = nameof(CanReplaceScreenBackground))]
+        private Task ReplaceConnectionBackgroundAsync() =>
+            ReplaceScreenBackgroundAsync("Replace connection screen background", intro: false);
+
+        async Task ReplaceScreenBackgroundAsync(string pickerTitle, bool intro) {
+            if (_textureImport == null || _portalDoc == null || _project == null) return;
+            uint[] surfaceIds = UiScreenBackgrounds.For(_project.DatMode, intro);
+
+            var top = GetTopLevel();
+            if (top == null) return;
+
+            var files = await top.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions {
+                Title = pickerTitle + " (image is resized to the existing portal frame)",
+                AllowMultiple = false,
+                FileTypeFilter = new[] {
+                    new FilePickerFileType("Images") { Patterns = new[] { "*.png", "*.jpg", "*.jpeg", "*.bmp", "*.webp" } }
+                }
+            });
+            if (files.Count == 0) return;
+            var localPath = files[0].TryGetLocalPath();
+            if (localPath == null) {
+                StatusText = "Could not read the selected image path.";
+                return;
+            }
+
+            if (_project.DatMode == DatProjectMode.LegacyPreTod) {
+                await ReplaceLegacyScreenBackgroundAsync(localPath, surfaceIds);
+                return;
+            }
+
+            var lines = new List<string>();
+            int stored = 0;
+            foreach (uint surfaceId in surfaceIds) {
+                if (_textureImport.TryOverwriteUiRenderSurface(localPath, surfaceId, _portalDoc, out string detail)) {
+                    stored++;
+                }
+                lines.Add(detail);
+            }
+
+            StatusText = stored == surfaceIds.Length
+                ? string.Join(" ", lines) + " Export DATs to write client_portal.dat."
+                : string.Join(" ", lines);
+        }
+
+        async Task ReplaceLegacyScreenBackgroundAsync(string imagePath, uint[] surfaceIds) {
+            if (_dats == null || _portalDoc == null || _project == null || _textureImport == null) return;
+
+            var lines = new List<string>();
+            int stored = 0;
+            foreach (uint surfaceId in surfaceIds) {
+                if (!_dats.TryGetFileBytes(DatArchive.Portal, surfaceId, out byte[]? existing) || existing == null
+                    || !LegacyDirectRenderSurface.TryParse(existing, out _, out int width, out int height)) {
+                    lines.Add($"0x{surfaceId:X8} is not a legacy RGB portal image.");
+                    continue;
+                }
+
+                byte[] rgb = TextureImportService.LoadImageAsRgb(imagePath, width, height);
+                _portalDoc.SetLegacyPortalFile(surfaceId, LegacyDirectRenderSurface.Encode(surfaceId, width, height, rgb));
+                stored++;
+                lines.Add($"0x{surfaceId:X8} ({width}x{height})");
+            }
+
+            if (stored == 0) {
+                StatusText = string.Join(" ", lines);
+                return;
+            }
+
+            try {
+                string editDirectory = Path.Combine(_project.ProjectDirectory, "legacy-edit");
+                string portalPath = await Task.Run(() => WriteLegacyPortalEdit(editDirectory, _project.BaseDatDirectory, _portalDoc));
+                StatusText = "Wrote " + string.Join(", ", lines) + $" into {portalPath}.";
+            }
+            catch (Exception ex) {
+                StatusText = string.Join(" ", lines) + " Legacy portal write failed: " + ex.Message;
+            }
+        }
+
+        static string WriteLegacyPortalEdit(string editDirectory, string baseDatDirectory, PortalDatDocument portalDoc) {
+            Directory.CreateDirectory(editDirectory);
+            string sourcePortal = Path.Combine(baseDatDirectory, "portal.dat");
+            string destPortal = Path.Combine(editDirectory, "portal.dat");
+            if (!File.Exists(sourcePortal)) {
+                throw new FileNotFoundException("Legacy portal.dat was not found in the project base DAT folder.", sourcePortal);
+            }
+
+            if (!File.Exists(destPortal)) {
+                File.Copy(sourcePortal, destPortal);
+            }
+
+            string sourceCell = Path.Combine(baseDatDirectory, "cell.dat");
+            string destCell = Path.Combine(editDirectory, "cell.dat");
+            if (File.Exists(sourceCell) && !File.Exists(destCell)) {
+                File.Copy(sourceCell, destCell);
+            }
+
+            LegacyPortalImageWriter.Apply(destPortal, portalDoc.GetLegacyPortalFiles());
+            return destPortal;
+        }
+
+        static TopLevel? GetTopLevel() {
+            if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+                return desktop.MainWindow;
+            return null;
+        }
     }
 
     public class LayoutListItem {
@@ -296,7 +415,7 @@ namespace WorldBuilder.Editors.Layout {
             if (localPath == null) return;
 
             try {
-                if (!_textureImport.TryOverwriteUiRenderSurface(localPath, sid.Value, _portalDoc)) {
+                if (!_textureImport.TryOverwriteUiRenderSurface(localPath, sid.Value, _portalDoc, out _)) {
                     return;
                 }
 

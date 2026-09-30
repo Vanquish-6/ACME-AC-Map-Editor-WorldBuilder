@@ -103,7 +103,7 @@ public partial class MainViewModel : ViewModelBase {
         CharGenEditorViewModel => "Heritage groups and starting towns for new characters.",
         WeenieEditorViewModel => "Weenies are game objects — items, NPCs, portals. Search, then edit properties.",
         MonsterEditorViewModel => "Create or override creatures. Search a weenie, then tweak appearance and save to the DB.",
-        LayoutEditorViewModel => "Inspect client UI layout files. This viewer does not change gameplay.",
+        LayoutEditorViewModel => "Replace the intro or connection background. Retail projects can also inspect UI layouts.",
         ObjectDebugEditorViewModel => "Inspect Setup and GfxObj meshes. Use this when a model looks wrong.",
         _ => "Choose World or Dungeon to build scenes, or Content to edit game data."
     };
@@ -180,7 +180,7 @@ public partial class MainViewModel : ViewModelBase {
             Tab("vitals", "Vitals", "Edit how Health, Stamina, and Mana are calculated.", ActiveEditor is VitalEditorViewModel),
         };
         InspectEditors = new EditorNavItem[] {
-            Tab("layout", "UI Layout", "Inspect client UI layout files.", ActiveEditor is LayoutEditorViewModel),
+            Tab("layout", "UI Layout", "Replace the intro or connection background, or inspect retail UI layouts.", ActiveEditor is LayoutEditorViewModel),
             Tab("debug", "Objects", "Inspect Setup and GfxObj meshes.", ActiveEditor is ObjectDebugEditorViewModel),
         };
     }

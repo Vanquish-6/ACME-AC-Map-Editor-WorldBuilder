@@ -2,6 +2,7 @@ using Avalonia.Media.Imaging;
 using Acme.Dat;
 using DatPixelFormat = Acme.Dat.PixelFormat;
 using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.PixelFormats;
 using SixLabors.ImageSharp.Processing;
 using System;
@@ -201,64 +202,156 @@ namespace WorldBuilder.Services {
         public static bool IsRenderSurfaceDatId(uint id) => (id & 0xFF000000) == 0x06000000;
 
         /// <summary>
-        /// Replaces pixel data for an existing portal RenderSurface (same width/height as the DAT entry)
-        /// and stores the result in the <paramref name="portalDoc"/> for deferred export.
-        /// The base DAT files are never modified directly.
+        /// Replaces pixel data for an existing portal RenderSurface and stores the result in
+        /// <paramref name="portalDoc"/> for deferred export. The base DAT files are never modified directly.
+        /// Supports uncompressed BGRA, uncompressed BGR (intro background), and JPEG stills (connection screen).
         /// </summary>
-        public bool TryOverwriteUiRenderSurface(string imagePath, uint renderSurfaceId, PortalDatDocument portalDoc) {
+        public bool TryOverwriteUiRenderSurface(
+            string imagePath,
+            uint renderSurfaceId,
+            PortalDatDocument portalDoc,
+            out string detail) {
+            detail = "";
             if (!File.Exists(imagePath)) {
-                Console.WriteLine("[TextureImport] Replace UI texture: file not found.");
+                detail = "Replace UI texture: file not found.";
+                Console.WriteLine("[TextureImport] " + detail);
                 return false;
             }
 
             var readDats = _project.DocumentManager?.Dats;
             if (readDats == null) {
-                Console.WriteLine("[TextureImport] Replace UI texture: DocumentManager.Dats is null.");
+                detail = "Replace UI texture: DocumentManager.Dats is null.";
+                Console.WriteLine("[TextureImport] " + detail);
                 return false;
             }
 
             try {
                 if (!readDats.TryGet<RenderSurface>(renderSurfaceId, out var existing) || existing == null) {
-                    Console.WriteLine($"[TextureImport] Replace UI texture: no RenderSurface at 0x{renderSurfaceId:X8} (TryGet failed).");
+                    detail = $"No RenderSurface at 0x{renderSurfaceId:X8}.";
+                    Console.WriteLine("[TextureImport] Replace UI texture: " + detail);
                     return false;
                 }
 
+                byte[] pixels;
                 int w = existing.Width;
                 int h = existing.Height;
-                if (w <= 0 || h <= 0) {
-                    Console.WriteLine($"[TextureImport] Replace UI texture: invalid size {w}x{h} for 0x{renderSurfaceId:X8}.");
+                if (existing.FormatEnum == DatPixelFormat.PFID_CUSTOM_RAW_JPEG) {
+                    if (!TryLargestJpegFrameSize(existing.SourceData, out w, out h)) {
+                        detail = $"0x{renderSurfaceId:X8} is a JPEG with no readable frame size.";
+                        Console.WriteLine("[TextureImport] Replace UI texture: " + detail);
+                        return false;
+                    }
+
+                    pixels = LoadImageAsJpeg(imagePath, w, h);
+                }
+                else if (existing.FormatEnum == DatPixelFormat.PFID_A8R8G8B8) {
+                    if (w <= 0 || h <= 0) {
+                        detail = $"0x{renderSurfaceId:X8} has invalid dimensions {w}x{h}.";
+                        Console.WriteLine("[TextureImport] Replace UI texture: " + detail);
+                        return false;
+                    }
+
+                    pixels = LoadImageAsBgra(imagePath, w, h);
+                }
+                else if (existing.FormatEnum == DatPixelFormat.PFID_R8G8B8) {
+                    if (w <= 0 || h <= 0) {
+                        detail = $"0x{renderSurfaceId:X8} has invalid dimensions {w}x{h}.";
+                        Console.WriteLine("[TextureImport] Replace UI texture: " + detail);
+                        return false;
+                    }
+
+                    pixels = LoadImageAsBgr(imagePath, w, h);
+                }
+                else {
+                    detail = $"0x{renderSurfaceId:X8} uses {existing.Format}. Replacements support A8R8G8B8, R8G8B8, and JPEG.";
+                    Console.WriteLine("[TextureImport] Replace UI texture: " + detail);
                     return false;
                 }
 
-                if (existing.FormatEnum != DatPixelFormat.PFID_A8R8G8B8) {
-                    Console.WriteLine($"[TextureImport] Replace UI texture: 0x{renderSurfaceId:X8} uses {existing.Format}; only PFID_A8R8G8B8 (raw BGRA) can be replaced from an image.");
-                    return false;
-                }
-
-                byte[] bgra;
-                try {
-                    bgra = LoadImageAsBgra(imagePath, w, h);
-                }
-                catch (Exception ex) {
-                    Console.WriteLine($"[TextureImport] Replace UI texture: could not load/resize image: {ex.Message}");
-                    return false;
-                }
-
-                if (bgra.Length < (long)w * h * 4) {
-                    Console.WriteLine($"[TextureImport] Replace UI texture: decoded buffer too small for {w}x{h} A8R8G8B8.");
-                    return false;
-                }
-
-                var rs = RenderSurfaceWithReplacedPixels(existing, bgra);
+                var rs = RenderSurfaceWithReplacedPixels(existing, pixels);
                 portalDoc.SetEntry<RenderSurface>(renderSurfaceId, rs);
 
-                Console.WriteLine($"[TextureImport] Replace UI texture: stored 0x{renderSurfaceId:X8} ({w}x{h}) — will be written to DAT on export.");
+                detail = $"Stored 0x{renderSurfaceId:X8} ({w}x{h}, {existing.FormatEnum}).";
+                Console.WriteLine("[TextureImport] Replace UI texture: " + detail + " Will be written to DAT on export.");
                 return true;
             }
             catch (Exception ex) {
+                detail = $"0x{renderSurfaceId:X8}: {ex.Message}";
                 Console.WriteLine($"[TextureImport] Replace UI texture: {ex.GetType().Name}: {ex.Message}");
                 return false;
             }
+        }
+
+        /// <summary>Largest SOF frame in a JPEG buffer. Retail connection stills embed a 160×120 thumbnail before the 640×480 frame.</summary>
+        public static bool TryLargestJpegFrameSize(ReadOnlySpan<byte> data, out int width, out int height) {
+            width = 0;
+            height = 0;
+            int best = 0;
+            for (int i = 0; i + 9 < data.Length; i++) {
+                if (data[i] != 0xFF) continue;
+                byte marker = data[i + 1];
+                if (marker is not (0xC0 or 0xC1 or 0xC2)) continue;
+                int frameHeight = (data[i + 5] << 8) | data[i + 6];
+                int frameWidth = (data[i + 7] << 8) | data[i + 8];
+                int area = frameWidth * frameHeight;
+                if (frameWidth <= 0 || frameHeight <= 0 || area <= best) continue;
+                best = area;
+                width = frameWidth;
+                height = frameHeight;
+            }
+
+            return best > 0;
+        }
+
+        public static byte[] LoadImageAsBgr(string imagePath, int targetWidth, int targetHeight) {
+            using var img = Image.Load<Rgba32>(imagePath);
+            if (img.Width != targetWidth || img.Height != targetHeight) {
+                img.Mutate(x => x.Resize(targetWidth, targetHeight));
+            }
+
+            var bgr = new byte[targetWidth * targetHeight * 3];
+            for (int y = 0; y < targetHeight; y++) {
+                for (int x = 0; x < targetWidth; x++) {
+                    var pixel = img[x, y];
+                    int idx = (y * targetWidth + x) * 3;
+                    bgr[idx + 0] = pixel.B;
+                    bgr[idx + 1] = pixel.G;
+                    bgr[idx + 2] = pixel.R;
+                }
+            }
+
+            return bgr;
+        }
+
+        public static byte[] LoadImageAsRgb(string imagePath, int targetWidth, int targetHeight) {
+            using var img = Image.Load<Rgba32>(imagePath);
+            if (img.Width != targetWidth || img.Height != targetHeight) {
+                img.Mutate(x => x.Resize(targetWidth, targetHeight));
+            }
+
+            var rgb = new byte[targetWidth * targetHeight * 3];
+            for (int y = 0; y < targetHeight; y++) {
+                for (int x = 0; x < targetWidth; x++) {
+                    var pixel = img[x, y];
+                    int idx = (y * targetWidth + x) * 3;
+                    rgb[idx + 0] = pixel.R;
+                    rgb[idx + 1] = pixel.G;
+                    rgb[idx + 2] = pixel.B;
+                }
+            }
+
+            return rgb;
+        }
+
+        public static byte[] LoadImageAsJpeg(string imagePath, int targetWidth, int targetHeight) {
+            using var img = Image.Load<Rgba32>(imagePath);
+            if (img.Width != targetWidth || img.Height != targetHeight) {
+                img.Mutate(x => x.Resize(targetWidth, targetHeight));
+            }
+
+            using var stream = new MemoryStream();
+            img.Save(stream, new JpegEncoder { Quality = 90 });
+            return stream.ToArray();
         }
 
         /// <summary>CPU preview for layout panel after a disk replace (same proportional sizing as DAT decode).</summary>
@@ -313,14 +406,15 @@ namespace WorldBuilder.Services {
         }
 
         /// <summary>Preserves portal fields from an unpacked <see cref="RenderSurface"/>; only replaces <see cref="RenderSurface.SourceData"/>.</summary>
-        public static RenderSurface RenderSurfaceWithReplacedPixels(RenderSurface existing, byte[] bgraData) {
+        public static RenderSurface RenderSurfaceWithReplacedPixels(RenderSurface existing, byte[] pixelData) {
             return new RenderSurface {
                 Id = existing.Id,
+                DataCategory = existing.DataCategory,
                 Width = existing.Width,
                 Height = existing.Height,
                 Format = existing.Format,
                 DefaultPaletteId = existing.DefaultPaletteId,
-                SourceData = bgraData
+                SourceData = pixelData
             };
         }
 
