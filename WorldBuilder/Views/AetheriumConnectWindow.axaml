@@ -1,0 +1,36 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:WorldBuilder.ViewModels"
+        x:Class="WorldBuilder.Views.AetheriumConnectWindow"
+        x:DataType="vm:AetheriumConnectWindowViewModel"
+        Title="Connect to Aetherium"
+        Width="520"
+        Height="420"
+        MinWidth="420"
+        MinHeight="340"
+        WindowStartupLocation="CenterOwner"
+        Background="#0d0016"
+        RequestedThemeVariant="Dark"
+        Icon="avares://WorldBuilder/Assets/acme-wblogo.ico">
+    <DockPanel Margin="16">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8" Margin="0,16,0,0">
+            <Button Content="Save" Command="{Binding SaveCommand}" MinWidth="80" />
+            <Button Classes="accent" Content="Test connection" Command="{Binding TestCommand}" MinWidth="140" />
+        </StackPanel>
+        <ScrollViewer>
+            <StackPanel Spacing="10">
+                <TextBlock Text="World Patch API" FontSize="16" FontWeight="Bold" Foreground="#c0b0d8" />
+                <TextBlock TextWrapping="Wrap" Foreground="#8a7a9e" FontSize="12"
+                           Text="Same URL and token for both worlds. World is white, red, or both. Test connection must say Red before a Red send will work. Then run @freelist flush in game and portal back in." />
+                <TextBlock Text="World" Foreground="#c0b0d8" />
+                <TextBox Text="{Binding Connection.World}" Watermark="white, red, or both" />
+                <TextBlock Text="Web URL" Foreground="#c0b0d8" />
+                <TextBox Text="{Binding Connection.BaseUrl}" Watermark="https://your-server.example" />
+                <TextBlock Text="Bearer token" Foreground="#c0b0d8" />
+                <TextBox Text="{Binding Connection.Token}" PasswordChar="*" />
+                <CheckBox Content="Allow insecure loopback (http on localhost)" IsChecked="{Binding Connection.AllowInsecureLoopback}" />
+                <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Foreground="#d4a843" />
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

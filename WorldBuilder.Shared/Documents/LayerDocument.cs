@@ -38,6 +38,14 @@ namespace WorldBuilder.Shared.Documents {
         public LayerDocument(ILogger logger) : base(logger) {
         }
 
+        public bool DropLandblock(ushort lbKey) {
+            bool removed = _terrainData.Landblocks.Remove(lbKey);
+            _terrainData.FieldMasks.Remove(lbKey);
+            if (!removed) return false;
+            ForceSave();
+            return true;
+        }
+
         public TerrainEntry[]? GetLandblockInternal(ushort lbKey) {
             if (_terrainData.Landblocks.TryGetValue(lbKey, out var lbCells)) {
                 // Convert sparse cell data to full landblock array

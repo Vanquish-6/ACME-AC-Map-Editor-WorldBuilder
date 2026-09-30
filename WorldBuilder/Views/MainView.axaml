@@ -66,6 +66,7 @@
                     <MenuItem Command="{Binding AnalyzeDungeonRoomsCommand}" Header="Analyze Dungeon Rooms..." />
                     <Separator />
                     <MenuItem Command="{Binding OpenSettingsWindowCommand}" Header="Settings..." />
+                    <MenuItem Command="{Binding OpenAetheriumConnectCommand}" Header="Connect to Aetherium..." />
                     <MenuItem Command="{Binding OpenLogFolderCommand}" Header="Open Log Folder" />
                     <Separator />
                     <MenuItem Command="{Binding ExitCommand}" Header="Exit" InputGesture="{Binding ExitGesture}" />
@@ -93,6 +94,11 @@
                     <MenuItem Command="{Binding LandscapeClearCacheCommand}" Header="Clear Cache" />
                     <MenuItem Command="{Binding LandscapeFreshStartCommand}" Header="Fresh Start" IsEnabled="{Binding CanPerformWholeWorldLandscapeMutation}" />
                     <MenuItem Command="{Binding LandscapeImportHeightmapCommand}" Header="Import Heightmap..." IsEnabled="{Binding CanPerformWholeWorldLandscapeMutation}" />
+                    <Separator />
+                    <MenuItem Command="{Binding PushLandblockLiveCommand}" Header="Test This Landblock" />
+                    <MenuItem Command="{Binding CommitLandblockCommand}" Header="Save This Landblock" />
+                    <MenuItem Command="{Binding ClearAetheriumTestCommand}" Header="Undo Live Test" />
+                    <MenuItem Command="{Binding RevertAetheriumWorldCommand}" Header="Restore Original Landblocks" />
                 </MenuItem>
                 <MenuItem Header="E_ditors">
                     <MenuItem Command="{Binding SwitchToLandscapeEditorCommand}" Header="World Editor" />

@@ -47,6 +47,12 @@ namespace WorldBuilder.Lib.Settings {
             set => SetProperty(ref _aceDbConnection, value);
         }
 
+        private AetheriumConnectionSettings _aetherium = new();
+        public AetheriumConnectionSettings Aetherium {
+            get => _aetherium;
+            set => SetProperty(ref _aetherium, value);
+        }
+
         public WorldBuilderSettings() { }
 
         public WorldBuilderSettings(ILogger<WorldBuilderSettings> log) {
@@ -70,11 +76,38 @@ namespace WorldBuilder.Lib.Settings {
                                 property.SetValue(this, property.GetValue(settings));
                             }
                         }
+                        if (MigratePlaintextAetheriumToken(json)) {
+                            Save();
+                        }
                     }
                 }
                 catch (Exception ex) {
                     _log?.LogError(ex, "Failed to load settings");
                 }
+            }
+        }
+
+        /// <summary>
+        /// Older builds wrote the Aetherium token as plain "Token". Load it once so the next
+        /// save replaces it with the encrypted form.
+        /// </summary>
+        private bool MigratePlaintextAetheriumToken(string json) {
+            try {
+                using var doc = JsonDocument.Parse(json);
+                if (!doc.RootElement.TryGetProperty("Aetherium", out var aetherium)
+                    || aetherium.ValueKind != JsonValueKind.Object
+                    || !aetherium.TryGetProperty("Token", out var legacy)
+                    || legacy.ValueKind != JsonValueKind.String) {
+                    return false;
+                }
+                string token = legacy.GetString() ?? "";
+                if (token.Length > 0 && Aetherium.Token.Length == 0) {
+                    Aetherium.Token = token;
+                }
+                return true;
+            }
+            catch (JsonException) {
+                return false;
             }
         }
 

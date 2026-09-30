@@ -61,7 +61,7 @@ namespace WorldBuilder.Lib.Settings {
     /// <summary>
     /// Marks a property as hidden from the settings UI
     /// </summary>
-    [AttributeUsage(AttributeTargets.Field)]
+    [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
     public class SettingHiddenAttribute : Attribute {
     }
 

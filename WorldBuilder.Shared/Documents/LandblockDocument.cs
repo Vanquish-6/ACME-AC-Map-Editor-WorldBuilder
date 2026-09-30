@@ -64,6 +64,22 @@ namespace WorldBuilder.Shared.Documents {
                 return true;
             }
 
+            LoadStaticsFromDat(datreader);
+            ClearDirty();
+            return true;
+        }
+
+        /// <summary>
+        /// Replaces saved statics with the objects from the base DAT and persists that.
+        /// </summary>
+        public void RestoreFromDat(IDatReaderWriter datreader) {
+            _data.StaticObjects.Clear();
+            LoadStaticsFromDat(datreader);
+            _loadedFromProjection = true;
+            ForceSave();
+        }
+
+        private void LoadStaticsFromDat(IDatReaderWriter datreader) {
             var lbIdHex = Id.Replace("landblock_", "");
             var lbId = uint.Parse(lbIdHex, System.Globalization.NumberStyles.HexNumber);
             var infoId = lbId << 16 | 0xFFFE;
@@ -97,9 +113,6 @@ namespace WorldBuilder.Shared.Documents {
                     });
                 }
             }
-
-            ClearDirty();
-            return true;
         }
 
         private Vector3 Offset(Vector3 origin, uint lbId) {

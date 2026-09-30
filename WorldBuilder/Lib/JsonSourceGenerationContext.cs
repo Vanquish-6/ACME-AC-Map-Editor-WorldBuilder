@@ -18,6 +18,8 @@ namespace WorldBuilder.Lib {
     [JsonSerializable(typeof(AppSettings))]
     [JsonSerializable(typeof(InputSettings))]
     [JsonSerializable(typeof(AceDbConnectionSettings))]
+    [JsonSerializable(typeof(AetheriumConnectionSettings))]
+    [JsonSerializable(typeof(List<string>))]
     [JsonSerializable(typeof(List<InputBinding>))]
     [JsonSerializable(typeof(InputBinding))]
     [JsonSerializable(typeof(CameraSettings))]

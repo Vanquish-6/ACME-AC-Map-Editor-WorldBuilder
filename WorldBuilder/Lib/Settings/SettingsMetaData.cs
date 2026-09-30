@@ -33,7 +33,8 @@ namespace WorldBuilder.Lib.Settings {
             Path = field?.GetCustomAttribute<SettingPathAttribute>();
             Format = field?.GetCustomAttribute<SettingFormatAttribute>()?.Format;
             Order = field?.GetCustomAttribute<SettingOrderAttribute>()?.Order ?? 0;
-            IsHidden = field?.GetCustomAttribute<SettingHiddenAttribute>() != null;
+            IsHidden = field?.GetCustomAttribute<SettingHiddenAttribute>() != null
+                || property.GetCustomAttribute<SettingHiddenAttribute>() != null;
         }
 
         private static string SplitCamelCase(string str) {

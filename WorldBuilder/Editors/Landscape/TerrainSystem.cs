@@ -247,6 +247,65 @@ namespace WorldBuilder.Editors.Landscape {
             Scene.UpdateLandblocks(landblockIds);
         }
 
+        /// <summary>
+        /// Puts pushed landblocks back to the base DAT in this project: heights, layer paint, and statics.
+        /// Neighbor heights are included because terrain edits copy their shared edge.
+        /// </summary>
+        public async Task RestoreOriginalAsync(IReadOnlyCollection<ushort> centers) {
+            if (centers.Count == 0) return;
+            var terrainKeys = new HashSet<ushort>();
+            foreach (var center in centers) {
+                foreach (var neighbor in Neighborhood(center))
+                    terrainKeys.Add(neighbor);
+            }
+
+            foreach (var key in terrainKeys)
+                TerrainDoc.DropLandblockOverride(key);
+
+            foreach (var layerId in LayerIds(TerrainDoc.TerrainData.RootItems)) {
+                var layer = await DocumentManager.GetOrCreateDocumentAsync<LayerDocument>(layerId);
+                if (layer == null) continue;
+                foreach (var key in terrainKeys)
+                    layer.DropLandblock(key);
+            }
+
+            foreach (var key in centers) {
+                string id = $"landblock_{key:X4}";
+                var stored = await DocumentManager.DocumentStorageService.GetDocumentAsync(id);
+                if (stored == null && !DocumentManager.ActiveDocs.ContainsKey(id)) continue;
+                var doc = await DocumentManager.GetOrCreateDocumentAsync<LandblockDocument>(id);
+                doc?.RestoreFromDat(Dats);
+            }
+
+            UpdateLandblocks(terrainKeys.Select(key => (uint)key));
+            Scene.InvalidateStaticObjectsCache();
+        }
+
+        private static IEnumerable<ushort> Neighborhood(ushort landblockKey) {
+            int x = (landblockKey >> 8) & 0xFF;
+            int y = landblockKey & 0xFF;
+            for (int dx = -1; dx <= 1; dx++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    int nx = x + dx;
+                    int ny = y + dy;
+                    if (nx is < 0 or > 254 || ny is < 0 or > 254) continue;
+                    yield return (ushort)((nx << 8) | ny);
+                }
+            }
+        }
+
+        private static List<string> LayerIds(List<TerrainLayerBase>? items) {
+            var ids = new List<string>();
+            if (items == null) return ids;
+            foreach (var item in items) {
+                if (item is TerrainLayer layer && !string.IsNullOrEmpty(layer.DocumentId))
+                    ids.Add(layer.DocumentId);
+                else if (item is TerrainLayerGroup group)
+                    ids.AddRange(LayerIds(group.Children));
+            }
+            return ids;
+        }
+
         public int GetLoadedChunkCount() => Scene.GetLoadedChunkCount();
         public int GetVisibleChunkCount(Frustum frustum) {
             // Count chunks that geometrically intersect the frustum and are loaded in memory

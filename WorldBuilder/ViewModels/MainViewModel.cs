@@ -31,6 +31,7 @@ using WorldBuilder.Editors.MonsterBuilder;
 using WorldBuilder.Editors.Weenie;
 using WorldBuilder.Editors.ObjectDebug;
 using WorldBuilder.Lib;
+using WorldBuilder.Lib.Aetherium;
 using WorldBuilder.Lib.Docking;
 using WorldBuilder.Lib.Input;
 using WorldBuilder.Lib.Settings;
@@ -289,6 +290,88 @@ public partial class MainViewModel : ViewModelBase {
         if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop) {
             desktop.Shutdown();
         }
+    }
+
+    [RelayCommand]
+    private Task PushLandblockLive() => RunAetherium(false);
+
+    [RelayCommand]
+    private Task CommitLandblock() => RunAetherium(true);
+
+    [RelayCommand]
+    private Task ClearAetheriumTest() => RunAetheriumClear();
+
+    [RelayCommand]
+    private Task RevertAetheriumWorld() => RunAetheriumRevert();
+
+    private async Task RunAetherium(bool commit) {
+        try {
+            var editor = GetLandscapeEditor();
+            if (editor?.TerrainSystem?.Dats == null || editor.TerrainSystem.TerrainDoc == null || editor.TerrainSystem.DocumentManager == null)
+                throw new InvalidOperationException("Open the World editor and stand on the landblock you want to send.");
+            var key = LandblockUnderCamera(editor);
+            string message = await WorldPatchPublisher.PushAsync(
+                _settings.Aetherium,
+                editor.TerrainSystem.Dats,
+                editor.TerrainSystem.TerrainDoc,
+                editor.TerrainSystem.DocumentManager,
+                key,
+                commit);
+            _settings.Save();
+            await LegacyDatConversionDialogs.ShowMessageAsync("MainDialogHost", "Aetherium", message);
+        }
+        catch (Exception ex) {
+            await LegacyDatConversionDialogs.ShowMessageAsync("MainDialogHost", "Aetherium", ex.Message);
+        }
+    }
+
+    private async Task RunAetheriumClear() {
+        try {
+            string message = await WorldPatchPublisher.ClearLiveAsync(_settings.Aetherium);
+            await LegacyDatConversionDialogs.ShowMessageAsync("MainDialogHost", "Aetherium", message);
+        }
+        catch (Exception ex) {
+            await LegacyDatConversionDialogs.ShowMessageAsync("MainDialogHost", "Aetherium", ex.Message);
+        }
+    }
+
+    private async Task RunAetheriumRevert() {
+        try {
+            var editor = GetLandscapeEditor();
+            var pushed = new List<ushort>();
+            foreach (var hex in _settings.Aetherium.PushedLandblocks) {
+                if (ushort.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out var key))
+                    pushed.Add(key);
+            }
+            var result = await WorldPatchPublisher.RevertAsync(_settings.Aetherium, pushed);
+            if (editor?.TerrainSystem != null && result.ProjectLandblocks.Count > 0)
+                await editor.TerrainSystem.RestoreOriginalAsync(result.ProjectLandblocks);
+            _settings.Aetherium.PushedLandblocks.Clear();
+            _settings.Save();
+            await LegacyDatConversionDialogs.ShowMessageAsync("MainDialogHost", "Aetherium", result.Message);
+        }
+        catch (Exception ex) {
+            await LegacyDatConversionDialogs.ShowMessageAsync("MainDialogHost", "Aetherium", ex.Message);
+        }
+    }
+
+    private static ushort LandblockUnderCamera(LandscapeEditorViewModel editor) {
+        var position = editor.TerrainSystem!.Scene.CameraManager.Current.Position;
+        int x = Math.Clamp((int)MathF.Floor(position.X / 192f), 0, 254);
+        int y = Math.Clamp((int)MathF.Floor(position.Y / 192f), 0, 254);
+        return (ushort)((x << 8) | y);
+    }
+
+    [RelayCommand]
+    private async Task OpenAetheriumConnect() {
+        if (Application.Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop)
+            return;
+        if (desktop.MainWindow == null) return;
+
+        var window = new AetheriumConnectWindow {
+            DataContext = new AetheriumConnectWindowViewModel(_settings)
+        };
+        await window.ShowDialog(desktop.MainWindow);
     }
 
     [RelayCommand]

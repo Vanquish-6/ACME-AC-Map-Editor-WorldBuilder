@@ -335,6 +335,17 @@ namespace WorldBuilder.Shared.Documents {
             return (x * 9) + y;
         }
 
+        /// <summary>
+        /// Drops a saved height override so this landblock draws from the base DAT again.
+        /// </summary>
+        public bool DropLandblockOverride(ushort lbKey) {
+            lock (_stateLock) {
+                if (!TerrainData.Landblocks.Remove(lbKey)) return false;
+            }
+            ForceSave();
+            return true;
+        }
+
         private bool Apply(TerrainUpdateEvent evt) {
             MarkDirty();
             lock (_stateLock) {
